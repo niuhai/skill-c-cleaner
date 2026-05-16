@@ -1,4 +1,4 @@
-﻿﻿# scan-duplicate-runtimes.ps1 - J类：重复运行时检测
+﻿﻿﻿﻿﻿﻿# scan-duplicate-runtimes.ps1 - J类：重复运行时检测
 # 只读扫描 — 通用模式匹配，自动发现Electron/CEF应用
 
 if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }

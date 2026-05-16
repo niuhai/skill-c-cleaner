@@ -1,4 +1,4 @@
-﻿﻿# scan-special-sources.ps1 - G类：特殊占用源扫描
+﻿﻿﻿﻿﻿﻿# scan-special-sources.ps1 - G类：特殊占用源扫描
 # 只读扫描，不修改任何文件 — 签名驱动 + 可疑文件检测
 
 if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }

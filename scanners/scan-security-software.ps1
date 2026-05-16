@@ -1,4 +1,4 @@
-﻿﻿# scan-security-software.ps1 - H类：安全/管控软件数据检测
+﻿﻿﻿﻿﻿﻿# scan-security-software.ps1 - H类：安全/管控软件数据检测
 # 只读扫描，绝不触碰这些文件！ — 完全签名驱动
 
 if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }

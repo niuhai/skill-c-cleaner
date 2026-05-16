@@ -1,4 +1,4 @@
-﻿﻿# scan-system-hidden.ps1 - A类：系统隐藏大文件扫描
+﻿﻿﻿﻿﻿﻿# scan-system-hidden.ps1 - A类：系统隐藏大文件扫描
 # 只读扫描，不修改任何文件
 
 if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }

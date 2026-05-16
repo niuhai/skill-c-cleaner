@@ -1,4 +1,4 @@
-﻿﻿# scan-multi-version.ps1 - I类：多版本软件共存检测
+﻿﻿﻿﻿﻿﻿# scan-multi-version.ps1 - I类：多版本软件共存检测
 # 只读扫描 — 通用模式匹配，不硬编码具体软件
 
 if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }

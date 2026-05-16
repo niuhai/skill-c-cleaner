@@ -1,4 +1,4 @@
-﻿﻿# scan-app-data.ps1 - E类：应用数据与日志扫描
+﻿﻿﻿﻿﻿﻿# scan-app-data.ps1 - E类：应用数据与日志扫描
 # 只读扫描，不修改任何文件 — 签名驱动 + IDE/媒体/办公/AI工具
 
 if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }

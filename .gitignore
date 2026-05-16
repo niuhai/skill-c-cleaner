@@ -1,0 +1,106 @@
+# ============================================
+# c-drive-cleaner .gitignore
+# 保护隐私 + 保持仓库整洁
+# ============================================
+
+# ---------- 📊 生成的报告数据 ----------
+# 临时生成的扫描结果（包含用户真实路径和大小）
+report_*.json
+report_*.md
+
+# 但保留模板文件和示例报告
+!reports/report-template.md
+!reports/report-template-v6-ai-decision.md
+!reports/sample-report-v6-ai-decision-full.md
+
+# ---------- 👤 用户自定义配置 ----------
+# user-custom.json 可能包含用户的个人信息或特定路径
+extensions/user-custom.json
+
+# ---------- 💾 备份与快照 ----------
+# 操作前后的快照数据（可能很大且包含用户数据）
+**/*backup*/
+**/*Backup*/
+**/*.bak
+**/*.old
+
+# 快照日志
+safety/snapshots/
+
+# ---------- 🔐 敏感信息 ----------
+# 包含用户路径的日志
+*.log
+
+# ---------- 🖥️ 系统文件 ----------
+# Windows 系统文件
+Desktop.ini
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ---------- 💻 IDE / 编辑器 ----------
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Notepad++
+*.nfo
+
+# ---------- 📦 依赖与构建 ----------
+# Node.js (如果将来有 JS 工具)
+node_modules/
+npm-debug.log*
+
+# Python (如果将来有 Python 工具)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+
+# ---------- 📝 临时文件 ----------
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS 临时文件
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ---------- 🎯 PowerShell 特定 ----------
+# PS 模块缓存
+ModuleAnalysisCache.psm1
+
+# PSScriptAnalyzer 结果
+*-ScriptAnalyzerResults.csv
+
+# ---------- 📂 其他 ----------
+# 测试输出
+test-results/
+coverage/
+
+# 打包文件
+*.zip
+*.tar.gz
+*.rar
+
+# 文档构建（如果用 MkDocs/Sphinx 等）
+site/
+docs/_build/

@@ -1,4 +1,4 @@
-﻿﻿# scan-large-files.ps1 - F类：大文件TOP N + 用户文件夹排行
+﻿﻿﻿﻿﻿﻿# scan-large-files.ps1 - F类：大文件TOP N + 用户文件夹排行
 # 只读扫描，不修改任何文件
 
 if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }
