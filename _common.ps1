@@ -1,4 +1,4 @@
-# _common.ps1 - c-drive-cleaner shared functions
+﻿# _common.ps1 - c-drive-cleaner shared functions
 # Dot-source: . (Join-Path (Split-Path -Parent $PSCommandPath) "_common.ps1")
 # Or from scanners: . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1")
 
