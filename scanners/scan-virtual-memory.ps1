@@ -1,4 +1,4 @@
-# scan-virtual-memory.ps1 - 虚拟内存智能评估模块
+﻿# scan-virtual-memory.ps1 - 虚拟内存智能评估模块
 # 只读评估，不修改任何系统设置
 
 if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }
@@ -157,7 +157,7 @@ if ($pagefileInfo.OnC) {
                     Recommendation = if ($isSSD) { "⭐ 推荐（SSD高速分区）" } else { "可用" }
                 }
                 
-                Write-Host "  驱动器 ${drive.Name}: 可用空间 ${driveFreeGB} GB $($driveFreeGB) GB" -ForegroundColor $(if ($isSSD) { "Green" } else { "White" }) -NoNewline
+                Write-Host "  驱动器 ${drive.Name}: 可用空间 ${driveFreeGB} GB" -ForegroundColor $(if ($isSSD) { "Green" } else { "White" }) -NoNewline
                 if ($isSSD) {
                     Write-Host "  ⭐" -ForegroundColor Green -NoNewline
                 }

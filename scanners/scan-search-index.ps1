@@ -1,26 +1,14 @@
-# scan-search-index.ps1 - SI class: Dynamic Search Index Optimization Scanner
+﻿# scan-search-index.ps1 - SI class: Dynamic Search Index Optimization Scanner
 # Scan-only, discovers development directories and index burdens dynamically
 # Generates exclusion list based on actual project structure found on system
 
-# Self-contained helper functions (avoids encoding issues in _common.ps1)
-function Get-SkillRoot {
-    if ($PSCommandPath) {
-        $dir = Split-Path -Parent $PSCommandPath
-        if (Test-Path (Join-Path $dir "_common.ps1")) { return $dir }
-        $parent = Split-Path -Parent $dir
-        if (Test-Path (Join-Path $parent "_common.ps1")) { return $parent }
-    }
-    return "C:\.trae\skills\c-drive-cleaner"
-}
-
+# 复用 _common.ps1 的 Get-SkillRoot 和 Get-FolderSizeFast（robocopy 方案，比 Get-ChildItem 快 10-100 倍）
+# Get-FolderSizeMB 作为本地包装函数，调用 Get-FolderSizeFast 并转换为 MB
 function Get-FolderSizeMB {
     param([string]$Path)
-    if (-not (Test-Path $Path -ErrorAction SilentlyContinue)) { return 0 }
-    try {
-        $files = Get-ChildItem $Path -Recurse -Force -File -ErrorAction SilentlyContinue
-        $size = ($files | Measure-Object Length -Sum).Sum
-        return [math]::Round($size / 1MB, 2)
-    } catch { return 0 }
+    $r = Get-FolderSizeFast $Path
+    if (-not $r.Found -or $r.Size -eq 0) { return 0 }
+    return [math]::Round($r.Size / 1MB, 2)
 }
 
 $SkillRoot = Get-SkillRoot

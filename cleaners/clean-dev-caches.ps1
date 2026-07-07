@@ -1,4 +1,4 @@
-# clean-dev-caches.ps1 - 开发缓存清理（逐一确认模式）
+﻿# clean-dev-caches.ps1 - 开发缓存清理（逐一确认模式）
 # 覆盖 npm, pip, cargo, gradle, yarn, pnpm, node-gyp, maven, conda, go
 # 每项列出大小后需用户显式确认
 
@@ -15,7 +15,7 @@ Write-Host "===== 开发工具缓存清理 — 逐项确认模式 =====" -Foregr
 Write-Host "每项会列出路径和大小，需显式确认 Y/N" -ForegroundColor Yellow
 Write-Host ""
 
-$totalFreed = 0
+$script:totalFreed = 0
 
 function Clean-Cache {
     param([string]$Path, [string]$Name, [string]$CmdHint)
@@ -95,7 +95,7 @@ if (Test-Path $mavenPath) {
 }
 
 Write-Host ""
-$totalMB = [math]::Round($totalFreed / 1MB, 2)
+$totalMB = [math]::Round($script:totalFreed / 1MB, 2)
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "本次清理完成，释放: ${totalMB} MB" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Cyan

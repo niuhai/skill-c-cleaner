@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Categories = "all",
     [string]$OutputFormat = "console",
     [string]$Template = "v6-ai-decision"
@@ -8,7 +8,7 @@ $SkillRoot = Split-Path -Parent $PSCommandPath
 if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
 . (Join-Path $SkillRoot "_common.ps1")
 
-$VERSION = "6.1.0"
+$VERSION = "6.1.2"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 
@@ -159,8 +159,8 @@ function BuildReport {
         $lines += "| 总容量 | $($space.TotalGB) GB | - |"
         $lines += "| 已用空间 | $($space.UsedGB) GB ($($space.UsedPercent)%) | $usageLevelCN |"
         $lines += "| 可用空间 | $($space.FreeGB) GB | $freeLevelCN |"
-        $lines += "| 可安全释放 | $([math]::Round($totalCleanable/1024,2)) GB |"
-        $lines += "| 需确认后释放 | $([math]::Round($totalCautious/1024,2)) GB |"
+        $lines += "| 可安全释放 | $([math]::Round($totalCleanable/1024,2)) GB | ✅ 安全 |"
+        $lines += "| 需确认后释放 | $([math]::Round($totalCautious/1024,2)) GB | ⚠️ 需确认 |"
     }
     
     if ($Global:VMAssessResult) {
@@ -180,7 +180,8 @@ function BuildReport {
         $lines += ""
         $lines += "| 指标 | 数值 | 状态 |"
         $lines += "|------|------|------|"
-        $lines += "| C盘可用空间 | $($vm.FreePercent)% | $($vm.FreePercent -lt 30 ? '🔴 不足' : '✅ 充足') |"
+        $freeStatus = if ($vm.FreePercent -lt 30) { '🔴 不足' } else { '✅ 充足' }
+        $lines += "| C盘可用空间 | $($vm.FreePercent)% | $freeStatus |"
         $lines += "| 页面文件位置 | $(if ($vm.OnC) { 'C盘' } else { '非系统分区' }) | $(if ($vm.OnC -and $vm.Assessment -ne 'normal') { '⚠️ 可优化' } else { '✅ 良好' }) |"
         $lines += "| 页面文件大小 | $vmSizeGB GB | - |"
         $lines += "| 评估结果 | $assessmentCN |"

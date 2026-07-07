@@ -15,118 +15,7 @@ param(
     [int]$FreeSpaceGB = 0
 )
 
-Write-Host "🧠 CleanSight Personalization Engine v6.2" -ForegroundColor Cyan
-
-$personalizedRecommendation = @{
-    scan_strategy = @{},
-    priority_actions = @(),
-    personalized_tips = @(),
-    adaptive_warnings = @(),
-    predicted_needs = @(),
-    confidence_score = 0,
-    reasoning = ""
-}
-
-$profile = $null
-$memory = $null
-
-if (Test-Path $UserProfilePath) {
-    try {
-        $profile = Get-Content $UserProfilePath | ConvertFrom-Json
-        Write-Host "   ✅ 已加载用户画像" -ForegroundColor Green
-    } catch {
-        Write-Host "   ⚠️ 画像文件损坏，使用默认配置" -ForegroundColor Yellow
-    }
-}
-
-if (Test-Path $ConversationMemoryPath) {
-    try {
-        $memory = Get-Content $ConversationMemoryPath | ConvertFrom-Json
-        Write-Host "   ✅ 已加载对话历史 ($($memory.conversation_log.Count) 条记录)" -ForegroundColor Green
-    } catch {
-        Write-Host "   ⚠️ 记忆文件损坏，将创建新记录" -ForegroundColor Yellow
-    }
-}
-
-if (-not $profile) {
-    Write-Host "`n📝 首次使用检测：正在构建基础画像..." -ForegroundColor Yellow
-    & "$PSScriptRoot\build-user-profile.ps1" -OutputPath $UserProfilePath | Out-Null
-    $profile = Get-Content $UserProfilePath | ConvertFrom-Json
-}
-
-Write-Host "`n🎯 [1/4] 分析当前场景..." -ForegroundColor Yellow
-
-$contextAnalysis = AnalyzeContext -Profile $profile -Context $CurrentContext -FreeSpaceGB $FreeSpaceGB
-$personalizedRecommendation.reasoning = $contextAnalysis.description
-
-Write-Host "   场景: $($contextAnalysis.label)" -ForegroundColor Cyan
-Write-Host "   紧急度: $($contextAnalysis.urgency)" -ForegroundColor $(if ($contextAnalysis.urgency -eq "high") { "Red" } elseif ($contextAnalysis.urgency -eq "medium") { "Yellow" } else { "Green" })
-
-Write-Host "`n📊 [2/4] 生成个性化扫描策略..." -ForegroundColor Yellow
-
-$scanStrategy = GenerateScanStrategy -Profile $profile -Memory $memory -ContextData $contextAnalysis
-$personalizedRecommendation.scan_strategy = $scanStrategy
-
-Write-Host "   推荐模式: $($scanStrategy.recommended_mode)" -ForegroundColor White
-Write-Host "   聚焦类别: $($scanStrategy.focus_categories -join ', ')" -ForegroundColor Gray
-Write-Host "   预计Token: ~$($scanStrategy.estimated_tokens)" -ForegroundColor Gray
-Write-Host "   预计时间: ~$($scanStrategy.estimated_time_min)分钟" -ForegroundColor Gray
-
-Write-Host "`n⚡ [3/4] 识别高优先级操作..." -ForegroundColor Yellow
-
-$priorityActions = IdentifyPriorityActions -Profile $profile -Memory $memory -ContextData $contextAnalysis
-$personalizedRecommendation.priority_actions = $priorityActions
-
-foreach ($action in $priorityActions | Select-Object -First 5) {
-    $icon = switch ($action.priority) { "critical" { "🔴" } "high" { "🟠" } "medium" { "🟡" } default { "⚪" } }
-    Write-Host "   $icon [$($action.priority.ToUpper())] $($action.name)" -ForegroundColor $(switch ($action.priority) { "critical" { "Red" } "high" { "Yellow" } "medium" { "Cyan" } default { "Gray" } })
-    if ($action.personalized_reason) {
-        Write-Host "      💡 $($action.personalized_reason)" -ForegroundColor DarkGray
-    }
-}
-
-Write-Host "`n💡 [4/4] 生成个性化建议..." -ForegroundColor Yellow
-
-$tipsAndWarnings = GeneratePersonalizedTips -Profile $profile -Memory $memory -ContextData $contextAnalysis
-$personalizedRecommendation.personalized_tips = $tipsAndWarnings.tips
-$personalizedRecommendation.adaptive_warnings = $tipsAndWarnings.warnings
-$personalizedRecommendation.predicted_needs = $tipsAndWarnings.predicted_needs
-$personalizedRecommendation.confidence_score = $tipsAndWarnings.confidence_score
-
-Write-Host "" 
-Write-Host "🎓 个性化提示:" -ForegroundColor Magenta
-foreach ($tip in $tipsAndWarnings.tips | Select-Object -First 3) {
-    Write-Host "   • $tip" -ForegroundColor White
-}
-
-if ($tipsAndWarnings.warnings.Count -gt 0) {
-    Write-Host ""
-    Write-Host "⚠️  智能提醒 (基于您的历史):" -ForegroundColor Yellow
-    foreach ($warning in $tipsAndWarnings.warnings) {
-        Write-Host "   ⚡ $warning" -ForegroundColor DarkYellow
-    }
-}
-
-if ($tipsAndWarnings.predicted_needs.Count -gt 0) {
-    Write-Host ""
-    Write-Host "🔮 预测需求:" -ForegroundColor Cyan
-    foreach ($need in $tipsAndWarnings.predicted_needs) {
-        Write-Host "   → $need" -ForegroundColor DarkCyan
-    }
-}
-
-Write-Host ""
-Write-Host "📈 置信度评分: $($tipsAndWarnings.confidence_score)/100" -ForegroundColor $(if ($tipsAndWarnings.confidence_score -ge 80) { "Green" } elseif ($tipsAndWarnings.confidence_score -ge 60) { "Yellow" } else { "Red" })
-
-$recommendationJson = $personalizedRecommendation | ConvertTo-Json -Depth 5
-$outputPath = "$PSScriptRoot\..\memory\latest-recommendation.json"
-Set-Content -Path $outputPath -Value $recommendationJson -Encoding UTF8
-
-Write-Host ""
-Write-Host "✅ 个性化推荐已生成！" -ForegroundColor Green
-Write-Host "   📄 详细报告: $outputPath" -ForegroundColor Cyan
-
-return $personalizedRecommendation
+# ===== 函数定义（必须先定义后调用，PowerShell 5.1 要求）=====
 
 function AnalyzeContext {
     param($Profile, [string]$Context, [int]$FreeSpaceGB)
@@ -360,14 +249,14 @@ function IdentifyPriorityActions {
             
             foreach ($action in $actions) {
                 if ($avoidedList -contains $action.name) {
-                    action.priority = "low"
-                    action.personalized_reason = "您之前表示不关注此项，已降低优先级"
+                    $action.priority = "low"
+                    $action.personalized_reason = "您之前表示不关注此项，已降低优先级"
                 }
             }
         }
         
         if ($Memory -and $Memory.learning_points.Count -gt 0) {
-            $topHistoryAction = $Memory.learning_points | Sort-Object success_rate -Descending, usage_count -Descending | Select-Object -First 1
+            $topHistoryAction = $Memory.learning_points | Sort-Object success_rate, usage_count -Descending | Select-Object -First 1
             
             if ($topHistoryAction -and $topHistoryAction.success_rate -ge 80) {
                 $historyBasedAction = @{
@@ -470,7 +359,9 @@ function GeneratePersonalizedTips {
                     "safety_concern" = "操作安全性顾虑"
                 }
                 
-                $label = $concernLabels[$primaryConcern.Name] ?? $primaryConcern.Name
+                # 修复: PowerShell 5.1 不支持 ?? 运算符，改用 if 表达式
+                $concernKey = $primaryConcern.Name
+                $label = if ($null -ne $concernLabels[$concernKey]) { $concernLabels[$concernKey] } else { $concernKey }
                 $result.tips += "我注意到您特别关注'$label'——后续建议会侧重这方面"
             }
         }
@@ -526,3 +417,118 @@ function GeneratePersonalizedTips {
     
     return $result
 }
+
+# ===== 主执行流程 =====
+
+Write-Host "🧠 CleanSight Personalization Engine v6.2" -ForegroundColor Cyan
+
+$personalizedRecommendation = @{
+    scan_strategy = @{}
+    priority_actions = @()
+    personalized_tips = @()
+    adaptive_warnings = @()
+    predicted_needs = @()
+    confidence_score = 0
+    reasoning = ""
+}
+
+$profile = $null
+$memory = $null
+
+if (Test-Path $UserProfilePath) {
+    try {
+        $profile = Get-Content $UserProfilePath | ConvertFrom-Json
+        Write-Host "   ✅ 已加载用户画像" -ForegroundColor Green
+    } catch {
+        Write-Host "   ⚠️ 画像文件损坏，使用默认配置" -ForegroundColor Yellow
+    }
+}
+
+if (Test-Path $ConversationMemoryPath) {
+    try {
+        $memory = Get-Content $ConversationMemoryPath | ConvertFrom-Json
+        Write-Host "   ✅ 已加载对话历史 ($($memory.conversation_log.Count) 条记录)" -ForegroundColor Green
+    } catch {
+        Write-Host "   ⚠️ 记忆文件损坏，将创建新记录" -ForegroundColor Yellow
+    }
+}
+
+if (-not $profile) {
+    Write-Host "`n📝 首次使用检测：正在构建基础画像..." -ForegroundColor Yellow
+    & "$PSScriptRoot\build-user-profile.ps1" -OutputPath $UserProfilePath | Out-Null
+    $profile = Get-Content $UserProfilePath | ConvertFrom-Json
+}
+
+Write-Host "`n🎯 [1/4] 分析当前场景..." -ForegroundColor Yellow
+
+$contextAnalysis = AnalyzeContext -Profile $profile -Context $CurrentContext -FreeSpaceGB $FreeSpaceGB
+$personalizedRecommendation.reasoning = $contextAnalysis.description
+
+Write-Host "   场景: $($contextAnalysis.label)" -ForegroundColor Cyan
+Write-Host "   紧急度: $($contextAnalysis.urgency)" -ForegroundColor $(if ($contextAnalysis.urgency -eq "high") { "Red" } elseif ($contextAnalysis.urgency -eq "medium") { "Yellow" } else { "Green" })
+
+Write-Host "`n📊 [2/4] 生成个性化扫描策略..." -ForegroundColor Yellow
+
+$scanStrategy = GenerateScanStrategy -Profile $profile -Memory $memory -ContextData $contextAnalysis
+$personalizedRecommendation.scan_strategy = $scanStrategy
+
+Write-Host "   推荐模式: $($scanStrategy.recommended_mode)" -ForegroundColor White
+Write-Host "   聚焦类别: $($scanStrategy.focus_categories -join ', ')" -ForegroundColor Gray
+Write-Host "   预计Token: ~$($scanStrategy.estimated_tokens)" -ForegroundColor Gray
+Write-Host "   预计时间: ~$($scanStrategy.estimated_time_min)分钟" -ForegroundColor Gray
+
+Write-Host "`n⚡ [3/4] 识别高优先级操作..." -ForegroundColor Yellow
+
+$priorityActions = IdentifyPriorityActions -Profile $profile -Memory $memory -ContextData $contextAnalysis
+$personalizedRecommendation.priority_actions = $priorityActions
+
+foreach ($action in $priorityActions | Select-Object -First 5) {
+    $icon = switch ($action.priority) { "critical" { "🔴" } "high" { "🟠" } "medium" { "🟡" } default { "⚪" } }
+    Write-Host "   $icon [$($action.priority.ToUpper())] $($action.name)" -ForegroundColor $(switch ($action.priority) { "critical" { "Red" } "high" { "Yellow" } "medium" { "Cyan" } default { "Gray" } })
+    if ($action.personalized_reason) {
+        Write-Host "      💡 $($action.personalized_reason)" -ForegroundColor DarkGray
+    }
+}
+
+Write-Host "`n💡 [4/4] 生成个性化建议..." -ForegroundColor Yellow
+
+$tipsAndWarnings = GeneratePersonalizedTips -Profile $profile -Memory $memory -ContextData $contextAnalysis
+$personalizedRecommendation.personalized_tips = $tipsAndWarnings.tips
+$personalizedRecommendation.adaptive_warnings = $tipsAndWarnings.warnings
+$personalizedRecommendation.predicted_needs = $tipsAndWarnings.predicted_needs
+$personalizedRecommendation.confidence_score = $tipsAndWarnings.confidence_score
+
+Write-Host "" 
+Write-Host "🎓 个性化提示:" -ForegroundColor Magenta
+foreach ($tip in $tipsAndWarnings.tips | Select-Object -First 3) {
+    Write-Host "   • $tip" -ForegroundColor White
+}
+
+if ($tipsAndWarnings.warnings.Count -gt 0) {
+    Write-Host ""
+    Write-Host "⚠️  智能提醒 (基于您的历史):" -ForegroundColor Yellow
+    foreach ($warning in $tipsAndWarnings.warnings) {
+        Write-Host "   ⚡ $warning" -ForegroundColor DarkYellow
+    }
+}
+
+if ($tipsAndWarnings.predicted_needs.Count -gt 0) {
+    Write-Host ""
+    Write-Host "🔮 预测需求:" -ForegroundColor Cyan
+    foreach ($need in $tipsAndWarnings.predicted_needs) {
+        Write-Host "   → $need" -ForegroundColor DarkCyan
+    }
+}
+
+Write-Host ""
+Write-Host "📈 置信度评分: $($tipsAndWarnings.confidence_score)/100" -ForegroundColor $(if ($tipsAndWarnings.confidence_score -ge 80) { "Green" } elseif ($tipsAndWarnings.confidence_score -ge 60) { "Yellow" } else { "Red" })
+
+$recommendationJson = $personalizedRecommendation | ConvertTo-Json -Depth 5
+$outputPath = "$PSScriptRoot\..\memory\latest-recommendation.json"
+Set-Content -Path $outputPath -Value $recommendationJson -Encoding UTF8
+
+Write-Host ""
+Write-Host "✅ 个性化推荐已生成！" -ForegroundColor Green
+Write-Host "   📄 详细报告: $outputPath" -ForegroundColor Cyan
+
+return $personalizedRecommendation

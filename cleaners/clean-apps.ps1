@@ -1,4 +1,4 @@
-# clean-apps.ps1 - 签名驱动应用缓存清理器
+﻿# clean-apps.ps1 - 签名驱动应用缓存清理器
 # 读取 app-signatures.json 中标记 cleanable 的应用，按 sub_cleanable 精确清理
 # 用法: .\clean-apps.ps1 [-RiskLevel safe|cautious|all] [-WhatIf] [-Apps "Trae CN,飞书,微信"]
 #        .\clean-apps.ps1 -MigrateFirst -TargetDrive D -RiskLevel safe   # 先迁移再删除
@@ -183,7 +183,7 @@ foreach ($item in $allApps) {
         $uniqueSubs = $subsToClean | Select-Object -Unique
         foreach ($sub in $uniqueSubs) {
             $fullPath = Join-Path $result.Path $sub
-            $freed = Clean-Directory -Path $fullPath -Label $sub -Preview:$WhatIf -TimeoutSec 120
+            $freed = Clean-Directory -Path $fullPath -Label $sub -Preview:$WhatIf
             $appFreed += $freed
         }
     } elseif ($app.cleanable -eq $true) {

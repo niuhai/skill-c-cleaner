@@ -1,4 +1,4 @@
-# clean-safe.ps1 - Layer 3 安全自动清理
+﻿# clean-safe.ps1 - Layer 3 安全自动清理
 # 仅清理明确可安全删除的类别: 临时文件, 缓存, 缩略图
 # 不涉及系统级操作, 不会造成任何副作用
 # 默认 WhatIf 模式
@@ -11,7 +11,10 @@ if (-not $skillRoot -or -not (Test-Path (Join-Path $skillRoot "_common.ps1"))) {
 }
 . (Join-Path $skillRoot "_common.ps1")
 
-$LogFile = "C:\cleanup_log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
+# 日志文件放到 skill 的 reports 目录下，避免污染 C 盘根目录
+$reportsDir = Join-Path $skillRoot "reports"
+if (-not (Test-Path $reportsDir)) { New-Item -ItemType Directory -Path $reportsDir -Force | Out-Null }
+$LogFile = Join-Path $reportsDir "cleanup_log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
 
 if (-not $ReallyDelete) {
     Write-Host "===== 安全清理 - WhatIf 预览模式 =====" -ForegroundColor Cyan
