@@ -1,7 +1,6 @@
 $root = "c:\.trae\skills\c-drive-cleaner"
 $files = @(
     "$root\_common.ps1",
-    "$root\_clean-helper.ps1",
     "$root\cleaners\clean-safe.ps1",
     "$root\cleaners\clean-apps.ps1",
     "$root\cleaners\clean-deep.ps1",

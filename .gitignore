@@ -17,6 +17,12 @@ report_*.md
 # user-custom.json 可能包含用户的个人信息或特定路径
 extensions/user-custom.json
 
+# ---------- 🧠 个性化引擎运行时产物 ----------
+# 用户画像和推荐结果（每次运行会重新生成，包含用户环境信息）
+memory/user-profile.json
+memory/latest-recommendation.json
+memory/conversation-memory.json
+
 # ---------- 💾 备份与快照 ----------
 # 操作前后的快照数据（可能很大且包含用户数据）
 **/*backup*/
