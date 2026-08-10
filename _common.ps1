@@ -13,7 +13,10 @@ function Get-SkillRoot {
         $parent = Split-Path -Parent $dir
         if (Test-Path (Join-Path $parent "_common.ps1")) { return $parent }
     }
-    return "C:\.trae\skills\c-drive-cleaner"
+    if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "_common.ps1"))) {
+        return $PSScriptRoot
+    }
+    throw "Skill root could not be resolved from the script location."
 }
 
 function Get-FolderSizeFast {
@@ -151,12 +154,19 @@ function Write-ScanResult {
 }
 
 function Get-DriveSpace {
-    $drive = Get-PSDrive C -ErrorAction SilentlyContinue
-    if (-not $drive) { return $null }
-    $totalGB = [math]::Round(($drive.Used + $drive.Free) / 1GB, 2)
-    $usedGB = [math]::Round($drive.Used / 1GB, 2)
-    $freeGB = [math]::Round($drive.Free / 1GB, 2)
-    $usedPercent = [math]::Round($drive.Used / ($drive.Used + $drive.Free) * 100, 1)
+    try {
+        $drive = New-Object System.IO.DriveInfo("C:\")
+        if (-not $drive.IsReady -or $drive.TotalSize -le 0) { return $null }
+        $totalBytes = [double]$drive.TotalSize
+        $freeBytes = [double]$drive.AvailableFreeSpace
+        $usedBytes = $totalBytes - $freeBytes
+        $totalGB = [math]::Round($totalBytes / 1GB, 2)
+        $usedGB = [math]::Round($usedBytes / 1GB, 2)
+        $freeGB = [math]::Round($freeBytes / 1GB, 2)
+        $usedPercent = [math]::Round($usedBytes / $totalBytes * 100, 1)
+    } catch {
+        return $null
+    }
     return @{
         TotalGB     = $totalGB
         UsedGB      = $usedGB

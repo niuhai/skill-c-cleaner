@@ -1,0 +1,59 @@
+{
+  "_schema": "targeted-optimization-v1",
+  "targets": [
+    {
+      "id": "qoder-cache",
+      "name": "Qoder 缓存",
+      "root": "%APPDATA%\\Qoder",
+      "paths": [
+        "SharedClientCache\\index",
+        "SharedClientCache\\cache",
+        "CachedData",
+        "Cache",
+        "Code Cache",
+        "GPUCache"
+      ],
+      "preserve": [
+        "User\\workspaceStorage",
+        "User\\History",
+        "User\\globalStorage"
+      ],
+      "risk": "safe",
+      "processes": ["qoder"],
+      "note": "只清缓存与共享索引；保留 User 下的工作区、历史和设置。Qoder 会在下次启动时重建索引。"
+    },
+    {
+      "id": "workbuddy-update-temp",
+      "name": "WorkBuddy 更新临时文件",
+      "root": "%LOCALAPPDATA%\\Temp",
+      "paths": ["workbuddy-update-*"],
+      "preserve": [],
+      "risk": "cautious",
+      "processes": ["workbuddy"],
+      "note": "仅处理 Temp 下的 WorkBuddy 更新目录；关闭 WorkBuddy 和相关更新进程后再清理。"
+    },
+    {
+      "id": "codex-old-runtimes",
+      "name": "Codex 旧 runtime / 安装残留",
+      "root": "%USERPROFILE%\\.cache\\codex-runtimes",
+      "paths": [
+        "codex-runtime-install-*",
+        "codex-primary-runtime.previous-*"
+      ],
+      "preserve": ["codex-primary-runtime"],
+      "risk": "cautious",
+      "processes": ["codex", "codex-code-mode-host", "codex-command-runner"],
+      "note": "只处理旧安装目录和 previous 目录；保留当前 codex-primary-runtime。需要旧 runtime 的任务可能会重新安装依赖。"
+    },
+    {
+      "id": "codex-whisper-model",
+      "name": "Codex Whisper 模型",
+      "root": "%USERPROFILE%\\.cache\\whisper",
+      "paths": ["small.pt"],
+      "preserve": [],
+      "risk": "cautious",
+      "processes": ["codex", "codex-code-mode-host"],
+      "note": "删除后本地语音转写下次需要重新下载模型；不用本地语音转写时再考虑。"
+    }
+  ]
+}

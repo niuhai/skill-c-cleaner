@@ -1,11 +1,11 @@
-# clean-deep.ps1 - Layer 2 深度清理（需逐项确认）
+﻿# clean-deep.ps1 - Layer 2 深度清理（需逐项确认）
 # 包含: Windows更新缓存 + WinSxS + 还原点 + 休眠
 # 每项列出大小后需用户显式确认 (Y/N)
 # 不自动执行任何操作！
 
 $skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 if (-not $skillRoot -or -not (Test-Path (Join-Path $skillRoot "_common.ps1"))) {
-    $skillRoot = "C:\.trae\skills\c-drive-cleaner"
+    throw "Skill root could not be resolved from the script location."
 }
 . (Join-Path $skillRoot "_common.ps1")
 

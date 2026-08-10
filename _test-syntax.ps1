@@ -1,11 +1,18 @@
-$root = "c:\.trae\skills\c-drive-cleaner"
+
+$root = $PSScriptRoot
 $files = @(
     "$root\_common.ps1",
+    "$root\analyze.ps1",
     "$root\cleaners\clean-safe.ps1",
     "$root\cleaners\clean-apps.ps1",
     "$root\cleaners\clean-deep.ps1",
-    "$root\cleaners\clean-dev-caches.ps1"
+    "$root\cleaners\clean-dev-caches.ps1",
+    "$root\cleaners\clean-targeted-optimization.ps1",
+    "$root\scanners\scan-system-hidden.ps1",
+    "$root\scanners\scan-virtual-memory.ps1",
+    "$root\scanners\scan-targeted-optimization.ps1"
 )
+
 $allOk = $true
 foreach ($f in $files) {
     $tokens = $null
@@ -24,8 +31,10 @@ foreach ($f in $files) {
         $allOk = $false
     }
 }
+
 if ($allOk) {
     Write-Host "`nAll syntax checks passed!" -ForegroundColor Green
 } else {
     Write-Host "`nSome checks failed!" -ForegroundColor Red
+    exit 1
 }

@@ -1,61 +1,95 @@
-﻿# scan-system-hidden.ps1 - A类：系统隐藏大文件扫描
-# 只读扫描，不修改任何文件
+# scan-system-hidden.ps1 - system hidden files
+# Read-only. Never modifies files or system settings.
 
-if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }
+if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) {
+    . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1")
+}
 
-Write-Host "===== A类：系统隐藏大文件 =====" -ForegroundColor Cyan
+Write-Host "===== A: system hidden files =====" -ForegroundColor Cyan
 
 $hiberPath = "C:\hiberfil.sys"
 if (Test-Path $hiberPath) {
     $hiberSize = (Get-Item $hiberPath -Force).Length
-    Write-ScanResult -Category "A" -Name "休眠文件(hiberfil.sys)" -Size $hiberSize `
+    Write-ScanResult -Category "A" -Name "hiberfil.sys" -Size $hiberSize `
         -Risk "cautious" -Path $hiberPath `
-        -Advice "可关闭休眠释放 | 如只用睡眠可关闭" -Migration "不可迁移"
+        -Advice "May be removed only by disabling hibernation" -Migration "Not migratable"
 } else {
-    Write-Host "  ○ 休眠文件: 不存在（已关闭）" -ForegroundColor DarkGray
+    Write-Host "  Hibernation file: not found" -ForegroundColor DarkGray
 }
 
-$pagePath = "C:\pagefile.sys"
-if (Test-Path $pagePath) {
-    $pageSize = (Get-Item $pagePath -Force).Length
-    Write-ScanResult -Category "A" -Name "页面文件(pagefile.sys)" -Size $pageSize `
-        -Risk "forbidden" -Path $pagePath `
-        -Advice "不建议删除 | 可迁移到其他盘" -Migration "系统设置>虚拟内存"
-} else {
-    Write-Host "  ○ 页面文件: 不存在" -ForegroundColor DarkGray
+$pagefilePaths = @("C:\pagefile.sys")
+$pagefileConfigured = $false
+try {
+    $memoryKey = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -ErrorAction Stop
+    foreach ($line in @($memoryKey.PagingFiles)) {
+        if (-not $line) { continue }
+        $parts = @($line -split '\s+') | Where-Object { $_ -ne "" }
+        if ($parts.Count -ge 1) {
+            $configuredPath = [string]$parts[0]
+            $prefix = '\??\'
+            if ($configuredPath.StartsWith($prefix)) { $configuredPath = $configuredPath.Substring($prefix.Length) }
+            $pagefilePaths += $configuredPath
+            $pagefileConfigured = $true
+        }
+    }
+} catch {}
+
+$pagefileFound = $false
+foreach ($pagePath in @($pagefilePaths | Where-Object { $_ } | Select-Object -Unique)) {
+    $pageSize = 0L
+    $readable = $false
+    try {
+        $pageItem = Get-Item -LiteralPath $pagePath -Force -ErrorAction Stop
+        if ($pageItem -and -not $pageItem.PSIsContainer) {
+            $pageSize = [long]$pageItem.Length
+            $readable = $true
+        }
+    } catch {}
+
+    if ($readable) {
+        Write-ScanResult -Category "A" -Name "pagefile.sys" -Size $pageSize `
+            -Risk "forbidden" -Path $pagePath `
+            -Advice "Do not delete directly; change through Virtual memory settings" -Migration "System Properties > Virtual memory"
+        $pagefileFound = $true
+    } elseif ($pagefileConfigured -and $pagePath -match '^[A-Za-z]:\\pagefile\.sys$') {
+        Write-Host "  Pagefile configured: $pagePath (size unavailable)" -ForegroundColor Yellow
+        $pagefileFound = $true
+    }
+}
+if (-not $pagefileFound) {
+    Write-Host "  Pagefile: no readable file or configuration found" -ForegroundColor DarkGray
 }
 
 try {
-    $rp = Get-ComputerRestorePoint -ErrorAction SilentlyContinue
-    if ($rp) {
-        $rpCount = @($rp).Count
-        Write-Host "  ⚠️ 系统还原点: $rpCount 个" -ForegroundColor Yellow
-        Write-Host "     建议: 可清理旧的保留最新 | 迁移: 不可迁移" -ForegroundColor DarkGray
-        Write-Host "     操作: vssadmin list shadows | vssadmin resize shadowstorage /on=C: /for=C: /maxsize=5GB" -ForegroundColor DarkGray
+    $restorePoints = Get-ComputerRestorePoint -ErrorAction SilentlyContinue
+    if ($restorePoints) {
+        $restoreCount = @($restorePoints).Count
+        Write-Host "  Restore points: $restoreCount" -ForegroundColor Yellow
+        Write-Host "  Review manually; do not resize shadow storage automatically" -ForegroundColor DarkGray
     } else {
-        Write-Host "  ○ 系统还原点: 无或无法访问" -ForegroundColor DarkGray
+        Write-Host "  Restore points: none or unavailable" -ForegroundColor DarkGray
     }
 } catch {
-    Write-Host "  ○ 系统还原点: 无法查询（需管理员权限）" -ForegroundColor DarkGray
+    Write-Host "  Restore points: unavailable" -ForegroundColor DarkGray
 }
 
-Write-Host "  系统还原点和WinSxS: 需 Dism 分析" -ForegroundColor DarkGray
+Write-Host "  WinSxS: use DISM analysis; never delete it manually" -ForegroundColor DarkGray
 try {
     $dismOutput = Dism /Online /Cleanup-Image /AnalyzeComponentStore 2>&1
     $dismText = $dismOutput -join "`n"
     if ($dismText -match "Component Store Cleanup Recommended\s*:\s*Yes") {
-        $reclaimMatch = [regex]::Match($dismText, 'Size of Reclaimable Packages\s*:\s*([\d.]+)\s*(GB|MB)')
-        if ($reclaimMatch.Success) {
-            Write-Host "  ✅ WinSxS可回收: $($reclaimMatch.Value)" -ForegroundColor Green
-            Write-Host "     操作: Dism /Online /Cleanup-Image /StartComponentCleanup" -ForegroundColor DarkGray
-        }
+        Write-Host "  WinSxS cleanup is recommended by DISM" -ForegroundColor Yellow
+        Write-Host "  Command for explicit review: Dism /Online /Cleanup-Image /StartComponentCleanup" -ForegroundColor DarkGray
     } else {
-        Write-Host "  ○ WinSxS: 当前无需清理" -ForegroundColor DarkGray
+        Write-Host "  WinSxS: no cleanup recommendation from DISM" -ForegroundColor DarkGray
     }
 } catch {
-    Write-Host "  ○ WinSxS: 无法分析（需管理员权限）" -ForegroundColor DarkGray
+    Write-Host "  WinSxS: DISM analysis unavailable" -ForegroundColor DarkGray
 }
 
-Invoke-SignatureScan -Category "system" -CategoryLabel "A" -AlreadyScanned @("Windows临时文件","用户临时文件","缩略图缓存","回收站","Windows更新缓存","传递优化","Windows错误报告","Prefetch","休眠文件","页面文件")
+Invoke-SignatureScan -Category "system" -CategoryLabel "A" -AlreadyScanned @(
+    "Windows temp", "User temp", "Thumbnail cache", "Recycle bin", "Windows update cache",
+    "Delivery Optimization", "Windows error reports", "Prefetch", "hiberfil.sys", "pagefile.sys"
+)
 
 Write-Host ""

@@ -1,9 +1,17 @@
 ---
 name: "c-drive-cleaner"
 description: "AI驱动的C盘智能决策顾问——不是清理工具，而是你的磁盘健康私人AI管家。深度分析+个性化建议+安全执行指导。当用户询问C盘空间不足、想清理垃圾、释放磁盘空间、想将某些数据移出C盘时调用此技能。"
-version: "6.1.2"
-brand: "CleanSight"
 ---
+
+## 定向优化（O 类）
+
+运行 `.\analyze.ps1 -Categories "O"` 扫描已知的高价值定向项：
+
+- Qoder：只清理 `SharedClientCache\index`、`SharedClientCache\cache`、`CachedData` 等缓存；保留 `User\workspaceStorage`、`User\History` 和 `User\globalStorage`。
+- WorkBuddy：只匹配 `%LOCALAPPDATA%\Temp\workbuddy-update-*` 更新残留；关闭 WorkBuddy 后再处理。
+- Codex：只处理 `.cache\codex-runtimes` 下的 `codex-runtime-install-*` 与 `codex-primary-runtime.previous-*`；保留当前 `codex-primary-runtime`。Whisper 模型单独列为谨慎项。
+
+使用 `.\cleaners\clean-targeted-optimization.ps1 -WhatIf` 预览，确认后追加 `-ReallyDelete`；脚本会检查相关进程并阻止越界路径。
 
 # CleanSight — AI Disk Health Advisor
 
@@ -232,5 +240,15 @@ c-drive-cleaner/
 
 ---
 
-*CleanSight v6.1.2 — AI Disk Health Advisor*
+*CleanSight v6.4.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
+## Virtual memory hardening (VM)
+
+Run `analyze.ps1 -Categories "VM"` before making any paging-file decision. Read the registry `PagingFiles` configuration first, then use pagefile file metadata as a secondary signal. If permissions block a read, report the limitation instead of claiming that no pagefile exists.
+
+- Separate C-drive space recovery, commit capacity, and I/O performance; moving a pagefile is not automatically a speed upgrade.
+- Treat the maximum configured size as a limit, not current disk usage; estimate reclaimable space from actual file size or verifiable initial size.
+- Compare every fixed drive by free space, physical disk number, media type, and bus type; leave headroom beyond the maximum required size.
+- If a hybrid layout already exists, keep the non-C primary pagefile and avoid repeating a large migration recommendation.
+- Keep a C pagefile until crash-dump requirements are confirmed. Never directly delete or move `pagefile.sys`.
+- Do not change registry, system properties, or pagefiles automatically. Require preview, explicit confirmation, reboot, and a post-reboot verification scan.

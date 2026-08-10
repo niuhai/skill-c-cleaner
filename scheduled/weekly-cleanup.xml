@@ -1,6 +1,6 @@
 # weekly-cleanup.xml - Windows 计划任务配置
 # 每周日 02:00 执行安全清理
-# 导入方法: schtasks /create /xml "C:\.trae\skills\c-drive-cleaner\scheduled\weekly-cleanup.xml" /tn "C-Drive-Weekly-Cleanup"
+# 导入前设置 C_DRIVE_CLEANER_ROOT 环境变量，再运行 schtasks /create /xml "weekly-cleanup.xml" /tn "C-Drive-Weekly-Cleanup"
 
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -51,7 +51,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>powershell.exe</Command>
-      <Arguments>-ExecutionPolicy Bypass -File "C:\.trae\skills\c-drive-cleaner\cleaners\clean-safe.ps1" -ReallyDelete</Arguments>
+      <Arguments>-ExecutionPolicy Bypass -File "%C_DRIVE_CLEANER_ROOT%\cleaners\clean-safe.ps1" -ReallyDelete</Arguments>
     </Exec>
   </Actions>
 </Task>

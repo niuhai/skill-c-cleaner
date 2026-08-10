@@ -7,7 +7,7 @@ param([switch]$ReallyDelete)
 
 $skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 if (-not $skillRoot -or -not (Test-Path (Join-Path $skillRoot "_common.ps1"))) {
-    $skillRoot = "C:\.trae\skills\c-drive-cleaner"
+    throw "Skill root could not be resolved from the script location."
 }
 . (Join-Path $skillRoot "_common.ps1")
 

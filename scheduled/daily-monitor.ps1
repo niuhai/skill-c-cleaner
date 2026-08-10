@@ -3,11 +3,9 @@
 $threshold = 90  # 超过90%报警
 
 # 动态获取 skill 根目录（兼容不同安装位置）
-$SkillRoot = "C:\.trae\skills\c-drive-cleaner"
-if ($PSCommandPath) {
-    $dir = Split-Path -Parent $PSCommandPath
-    $parent = Split-Path -Parent $dir
-    if (Test-Path (Join-Path $parent "_common.ps1")) { $SkillRoot = $parent }
+$SkillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+if (-not (Test-Path (Join-Path $SkillRoot "_common.ps1"))) {
+    throw "Skill root could not be resolved from the script location."
 }
 
 $drive = Get-PSDrive C

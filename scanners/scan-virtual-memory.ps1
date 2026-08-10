@@ -1,251 +1,297 @@
-﻿# scan-virtual-memory.ps1 - 虚拟内存智能评估模块
-# 只读评估，不修改任何系统设置
 
-if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }
+# scan-virtual-memory.ps1 - virtual memory assessment
+# Read-only. Never changes registry, system properties, or pagefile files.
 
-Write-Host "`n===== 虚拟内存智能评估 =====" -ForegroundColor Cyan
-
-$isAdmin = Test-Admin
-if (-not $isAdmin) {
-    Write-Host "  ⚠️  提示: 管理员权限可获取更详细的虚拟内存信息" -ForegroundColor Yellow
+if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) {
+    . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1")
 }
 
-$driveC = Get-PSDrive C -ErrorAction SilentlyContinue
+Write-Host "`n===== Virtual memory assessment =====" -ForegroundColor Cyan
+
+function Format-BytesGB {
+    param([double]$Bytes)
+    return [math]::Round($Bytes / 1GB, 2)
+}
+
+function Normalize-PagefilePath {
+    param([string]$Path)
+    if (-not $Path) { return "" }
+    $prefix = '\??\'
+    if ($Path.StartsWith($prefix)) { return $Path.Substring($prefix.Length) }
+    return $Path
+}
+
+function Get-PagefileConfiguration {
+    $entries = @()
+    try {
+        $key = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -ErrorAction Stop
+        foreach ($line in @($key.PagingFiles)) {
+            if (-not $line) { continue }
+            $parts = @($line -split '\s+') | Where-Object { $_ -ne "" }
+            if ($parts.Count -lt 3) { continue }
+
+            $path = Normalize-PagefilePath ([string]$parts[0])
+            $initialMB = 0L
+            $maximumMB = 0L
+            [void][long]::TryParse($parts[1], [ref]$initialMB)
+            [void][long]::TryParse($parts[2], [ref]$maximumMB)
+            $driveMatch = [regex]::Match($path, '^(?<drive>[A-Za-z]):')
+            $actualBytes = 0L
+            $actualReadable = $false
+
+            try {
+                $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+                if ($item -and -not $item.PSIsContainer) {
+                    $actualBytes = [long]$item.Length
+                    $actualReadable = $true
+                }
+            } catch {
+                # pagefile.sys is commonly protected; registry data is still useful.
+            }
+
+            $entries += [PSCustomObject]@{
+                Path = $path
+                Drive = if ($driveMatch.Success) { $driveMatch.Groups['drive'].Value.ToUpperInvariant() } else { "" }
+                InitialMB = $initialMB
+                MaximumMB = $maximumMB
+                SystemManaged = ($initialMB -eq 0 -and $maximumMB -eq 0)
+                ActualBytes = $actualBytes
+                ActualReadable = $actualReadable
+            }
+        }
+    } catch {
+        # Permission-limited sessions may not expose the registry value.
+    }
+    return @($entries)
+}
+
+function Get-PagefileUsageInfo {
+    $items = @()
+    try {
+        $items = @(Get-CimInstance -ClassName Win32_PageFileUsage -ErrorAction Stop)
+    } catch {
+        try { $items = @(Get-WmiObject -Class Win32_PageFileUsage -ErrorAction Stop) } catch { $items = @() }
+    }
+    return @($items)
+}
+
+function Get-PhysicalMemoryBytes {
+    try {
+        $computer = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+        if ($computer.TotalPhysicalMemory) { return [long]$computer.TotalPhysicalMemory }
+    } catch {}
+    try {
+        $computer = Get-WmiObject -Class Win32_ComputerSystem -ErrorAction Stop
+        if ($computer.TotalPhysicalMemory) { return [long]$computer.TotalPhysicalMemory }
+    } catch {}
+    try {
+        Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction Stop
+        $computerInfo = New-Object Microsoft.VisualBasic.Devices.ComputerInfo
+        if ($computerInfo.TotalPhysicalMemory) { return [long]$computerInfo.TotalPhysicalMemory }
+    } catch {}
+    return 0L
+}
+
+function Get-CrashDumpMode {
+    try {
+        $value = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl" -ErrorAction Stop
+        return $value.CrashDumpEnabled
+    } catch {
+        return $null
+    }
+}
+
+function Get-DriveSnapshot {
+    $snapshots = @()
+    try {
+        foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
+            if (-not $drive.IsReady -or $drive.DriveType -ne [System.IO.DriveType]::Fixed) { continue }
+            $freePercent = 0
+            if ($drive.TotalSize -gt 0) {
+                $freePercent = [math]::Round(($drive.AvailableFreeSpace / $drive.TotalSize) * 100, 1)
+            }
+
+            $diskNumber = $null
+            $mediaType = "Unknown"
+            $busType = "Unknown"
+            try {
+                $partition = Get-Partition -DriveLetter $drive.Name.Substring(0, 1) -ErrorAction Stop
+                $diskNumber = $partition.DiskNumber
+                $disk = Get-Disk -Number $diskNumber -ErrorAction Stop
+                if ($disk.MediaType) { $mediaType = [string]$disk.MediaType }
+                if ($disk.BusType) { $busType = [string]$disk.BusType }
+            } catch {}
+
+            $snapshots += [PSCustomObject]@{
+                Drive = $drive.Name.Substring(0, 1).ToUpperInvariant()
+                TotalBytes = [long]$drive.TotalSize
+                FreeBytes = [long]$drive.AvailableFreeSpace
+                TotalGB = Format-BytesGB $drive.TotalSize
+                FreeGB = Format-BytesGB $drive.AvailableFreeSpace
+                FreePercent = $freePercent
+                DiskNumber = $diskNumber
+                MediaType = $mediaType
+                BusType = $busType
+            }
+        }
+    } catch {}
+    return @($snapshots)
+}
+
+$isAdmin = $false
+try { $isAdmin = Test-Admin } catch {}
+if (-not $isAdmin) {
+    Write-Host "  WARNING: non-admin session; usage and disk metadata may be incomplete" -ForegroundColor Yellow
+}
+
+$driveSnapshots = @(Get-DriveSnapshot)
+$driveC = $driveSnapshots | Where-Object { $_.Drive -eq "C" } | Select-Object -First 1
 if (-not $driveC) {
-    Write-Host "  ❌ 无法获取C盘信息" -ForegroundColor Red
+    Write-Host "  ERROR: C drive information unavailable" -ForegroundColor Red
     return
 }
 
-$freePercent = [math]::Round($driveC.Free / ($driveC.Used + $driveC.Free) * 100, 1)
-$freeGB = [math]::Round($driveC.Free / 1GB, 2)
-$totalGB = [math]::Round(($driveC.Used + $driveC.Free) / 1GB, 2)
-
-Write-Host "`n  [系统状态]" -ForegroundColor White
-Write-Host "  C盘可用空间: $freeGB GB ($freePercent%)" -ForegroundColor $(if ($freePercent -lt 20) { "Red" } elseif ($freePercent -lt 30) { "Yellow" } else { "Green" })
-
-$pagefileInfo = @{
-    OnC = $false
-    TotalSize = 0L
-    Usage = 0L
-    Location = @()
-    Recommendation = ""
-    OptimizationPotential = 0L
-    Assessment = "normal"
-}
-
-$pagefilePath = "C:\pagefile.sys"
-if (Test-Path $pagefilePath) {
-    $pageSize = (Get-Item $pagefilePath -Force).Length
-    $pagefileInfo.TotalSize = $pageSize
-    $pagefileInfo.OnC = $true
-    
-    Write-Host "`n  [页面文件检测]" -ForegroundColor White
-    $sizeGB = [math]::Round($pageSize / 1GB, 2)
-    Write-Host "  位置: C:\pagefile.sys" -ForegroundColor Yellow
-    Write-Host "  大小: $sizeGB GB" -ForegroundColor Yellow
-}
-
-try {
-    $wmiPagefiles = Get-WmiObject -Class Win32_PageFileUsage -ErrorAction SilentlyContinue
-    if ($wmiPagefiles) {
-        foreach ($pf in $wmiPagefiles) {
-            $location = $pf.Name
-            $allocatedMB = $pf.AllocatedBaseSize
-            $currentMB = $pf.CurrentUsage
-            $peakMB = $pf.PeakUsage
-            
-            Write-Host "`n  [WMI详细信息]" -ForegroundColor White
-            Write-Host "  位置: $location" -ForegroundColor DarkGray
-            Write-Host "  初始大小: $allocatedMB MB" -ForegroundColor DarkGray
-            Write-Host "  当前使用: $currentMB MB" -ForegroundColor DarkGray
-            Write-Host "  峰值使用: $peakMB MB" -ForegroundColor DarkGray
-            
-            $pagefileInfo.Location += $location
-            
-            if ($currentMB -gt 0) {
-                $pagefileInfo.Usage = $currentMB * 1MB
-            }
-        }
-    }
-} catch {
-    Write-Host "  提示: 需要管理员权限获取详细WMI信息" -ForegroundColor DarkGray
-}
-
-$drives = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | Where-Object { $_.Free -gt 0 }
+$freePercent = $driveC.FreePercent
+$freeGB = $driveC.FreeGB
+$totalGB = $driveC.TotalGB
+$ramBytes = Get-PhysicalMemoryBytes
+$ramGB = if ($ramBytes -gt 0) { Format-BytesGB $ramBytes } else { $null }
+$crashDumpMode = Get-CrashDumpMode
+$pagefiles = @(Get-PagefileConfiguration)
+$usageItems = @(Get-PagefileUsageInfo)
 $recommendations = @()
+$suitableDrives = @()
 
-Write-Host "`n  [优化潜力分析]" -ForegroundColor White
+Write-Host "`n  [System state]" -ForegroundColor White
+$freeColor = if ($freePercent -lt 20) { "Red" } elseif ($freePercent -lt 30) { "Yellow" } else { "Green" }
+Write-Host "  C free: $freeGB GB / $totalGB GB ($freePercent%)" -ForegroundColor $freeColor
+if ($ramGB) { Write-Host "  Physical memory: $ramGB GB" -ForegroundColor DarkGray }
+else { Write-Host "  Physical memory: unavailable" -ForegroundColor DarkGray }
+if ($null -ne $crashDumpMode) { Write-Host "  Crash dump mode: $crashDumpMode" -ForegroundColor DarkGray }
 
-if ($pagefileInfo.OnC) {
-    if ($freePercent -lt 30) {
-        $pagefileInfo.Assessment = "critical"
-        $potentialGB = [math]::Round($pagefileInfo.TotalSize / 1GB, 2)
-        $pagefileInfo.OptimizationPotential = $pagefileInfo.TotalSize
-        
-        Write-Host "  ⚠️  评估状态: 危急" -ForegroundColor Red
-        Write-Host "  问题: C盘空间不足且页面文件占用大量空间" -ForegroundColor Red
-        Write-Host "  优化潜力: 可释放约 $potentialGB GB 空间" -ForegroundColor Yellow
-        
-        $recommendations += @{
-            Priority = "high"
-            Action = "迁移页面文件"
-            Detail = "将页面文件迁移到其他分区，缓解C盘压力"
-            SpaceRelease = $potentialGB
-            PerformanceGain = "显著"
-        }
-        
-        $recommendations += @{
-            Priority = "medium"
-            Action = "优化方案"
-            Detail = "混合方案：保留4GB在C盘作为备份路径，主页面文件迁移到空间充足的分区"
-            SpaceRelease = [math]::Max(0, $potentialGB - 4)
-            PerformanceGain = "中等"
-        }
-    } elseif ($freePercent -lt 50) {
-        $pagefileInfo.Assessment = "warning"
-        $potentialGB = [math]::Round($pagefileInfo.TotalSize / 1GB, 2)
-        $pagefileInfo.OptimizationPotential = [math]::Round($pagefileInfo.TotalSize * 0.5)
-        
-        Write-Host "  ⚠️  评估状态: 警告" -ForegroundColor Yellow
-        Write-Host "  问题: C盘空间偏紧，页面文件可考虑优化" -ForegroundColor Yellow
-        Write-Host "  优化潜力: 建议释放约 $([math]::Round($pagefileInfo.OptimizationPotential/1GB, 2)) GB" -ForegroundColor Yellow
-        
-        $recommendations += @{
-            Priority = "medium"
-            Action = "评估后迁移"
-            Detail = "如果其他分区有足够空间，可考虑迁移页面文件以优化性能"
-            SpaceRelease = [math]::Round($pagefileInfo.OptimizationPotential/1GB, 2)
-            PerformanceGain = "轻微"
-        }
-    } else {
-        $pagefileInfo.Assessment = "normal"
-        Write-Host "  ✅ 评估状态: 正常" -ForegroundColor Green
-        Write-Host "  C盘空间充足，当前页面文件配置合理" -ForegroundColor Green
-        
-        $recommendations += @{
-            Priority = "low"
-            Action = "无需优化"
-            Detail = "当前配置满足系统需求，无需调整"
-            SpaceRelease = 0
-            PerformanceGain = "无"
-        }
-    }
-    
-    if ($recommendations -and $recommendations.Count -gt 0 -and $recommendations[0].Priority -ne "low") {
-        Write-Host "`n  [可用驱动器分析]" -ForegroundColor White
-        
-        $suitableDrives = @()
-        foreach ($drive in $drives) {
-            if ($drive.Name -eq "C") { continue }
-            
-            $driveFreeGB = [math]::Round($drive.Free / 1GB, 2)
-            $driveTotalGB = [math]::Round(($drive.Free + $drive.Used) / 1GB, 2)
-            
-            if ($driveFreeGB -gt 30) {
-                $isSSD = $false
-                try {
-                    $disk = Get-Disk -ErrorAction SilentlyContinue | Where-Object { $_.Number -eq (Get-Partition -DriveLetter $drive.Name -ErrorAction SilentlyContinue).DiskNumber }
-                    if ($disk -and $disk.MediaType -match "SSD|Solid") {
-                        $isSSD = $true
-                    }
-                } catch {}
-                
-                $suitableDrives += @{
-                    Drive = $drive.Name
-                    FreeGB = $driveFreeGB
-                    IsSSD = $isSSD
-                    Recommendation = if ($isSSD) { "⭐ 推荐（SSD高速分区）" } else { "可用" }
-                }
-                
-                Write-Host "  驱动器 ${drive.Name}: 可用空间 ${driveFreeGB} GB" -ForegroundColor $(if ($isSSD) { "Green" } else { "White" }) -NoNewline
-                if ($isSSD) {
-                    Write-Host "  ⭐" -ForegroundColor Green -NoNewline
-                }
-                Write-Host ""
-                Write-Host "    推荐理由: " -ForegroundColor DarkGray -NoNewline
-                if ($isSSD) {
-                    Write-Host "高速SSD分区，虚拟内存读写性能更佳" -ForegroundColor Green
-                } else {
-                    Write-Host "空间充足" -ForegroundColor DarkGray
-                }
-            }
-        }
-        
-        if ($suitableDrives.Count -eq 0) {
-            Write-Host "  ⚠️  未找到合适的迁移目标驱动器（需要至少30GB可用空间）" -ForegroundColor Yellow
-        }
+if ($pagefiles.Count -gt 0) {
+    Write-Host "`n  [PagingFiles registry configuration]" -ForegroundColor White
+    foreach ($pf in $pagefiles) {
+        $sizeText = if ($pf.SystemManaged) { "system managed" } else { "$($pf.InitialMB)-$($pf.MaximumMB) MB" }
+        $actualText = if ($pf.ActualReadable) { "; actual file $((Format-BytesGB $pf.ActualBytes)) GB" } else { "; actual size unavailable" }
+        $color = if ($pf.Drive -eq "C") { "Yellow" } else { "Green" }
+        Write-Host "  $($pf.Path): $sizeText$actualText" -ForegroundColor $color
     }
 } else {
-    Write-Host "  ✅ 页面文件不在C盘" -ForegroundColor Green
+    Write-Host "`n  [PagingFiles registry configuration]" -ForegroundColor White
+    Write-Host "  WARNING: PagingFiles could not be read; do not infer that no pagefile exists" -ForegroundColor Yellow
+}
+
+if ($usageItems.Count -gt 0) {
+    Write-Host "`n  [Pagefile usage]" -ForegroundColor White
+    foreach ($usage in $usageItems) {
+        Write-Host "  $($usage.Name): allocated $($usage.AllocatedBaseSize) MB; current $($usage.CurrentUsage) MB; peak $($usage.PeakUsage) MB" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "  Pagefile usage: unavailable" -ForegroundColor DarkGray
+}
+
+$cPagefiles = @($pagefiles | Where-Object { $_.Drive -eq "C" })
+$offCPagefiles = @($pagefiles | Where-Object { $_.Drive -and $_.Drive -ne "C" })
+$cActualBytes = [long](($cPagefiles | Measure-Object ActualBytes -Sum).Sum)
+$cConfiguredMaxMB = [long](($cPagefiles | Measure-Object MaximumMB -Sum).Sum)
+$cConfiguredInitialMB = [long](($cPagefiles | Measure-Object InitialMB -Sum).Sum)
+$allConfiguredMaxMB = [long](($pagefiles | Measure-Object MaximumMB -Sum).Sum)
+$cPagefileKnown = ($cPagefiles.Count -gt 0)
+
+Write-Host "`n  [Assessment]" -ForegroundColor White
+if ($cPagefileKnown) {
+    $cReclaimGB = if ($cActualBytes -gt 0) { Format-BytesGB $cActualBytes } elseif ($cConfiguredInitialMB -gt 0) { [math]::Round($cConfiguredInitialMB / 1024, 2) } else { 0 }
+    $cMaxGB = [math]::Round($cConfiguredMaxMB / 1024, 2)
+    $assessment = if ($freePercent -lt 20) { "critical" } elseif ($freePercent -lt 30) { "warning" } else { "normal" }
+
+    if ($offCPagefiles.Count -gt 0) {
+        Write-Host "  Layout: C pagefile plus non-C pagefile (hybrid)" -ForegroundColor Green
+        Write-Host "  C reclaim estimate: about $cReclaimGB GB actual file size" -ForegroundColor Yellow
+        Write-Host "  Result: migration mainly frees C space; it is not automatically a performance upgrade" -ForegroundColor DarkGray
+        $recommendations += @{
+            Priority = if ($assessment -eq "critical") { "high" } else { "medium" }
+            Action = "Keep the non-C primary pagefile; review the C pagefile before removing it"
+            Detail = "The current configuration is already hybrid. Keep a C pagefile when complete crash dumps are required; otherwise any change must be confirmed and tested after reboot."
+            SpaceRelease = $cReclaimGB
+            PerformanceGain = "mainly C space; performance depends on physical disk layout"
+        }
+    } else {
+        Write-Host "  Layout: pagefile only on C, or no non-C pagefile detected" -ForegroundColor Yellow
+        Write-Host "  C configuration: initial $cConfiguredInitialMB MB; maximum $cConfiguredMaxMB MB" -ForegroundColor Yellow
+        $recommendations += @{
+            Priority = if ($assessment -eq "critical") { "high" } else { "medium" }
+            Action = "Evaluate moving the primary pagefile to a spacious non-C drive"
+            Detail = "Check free space, physical disk identity, media type, and crash-dump requirements before changing settings."
+            SpaceRelease = $cReclaimGB
+            PerformanceGain = "space benefit is clear; performance benefit requires a separate physical disk"
+        }
+    }
+    if ($cMaxGB -gt 0) { Write-Host "  C maximum setting: $cMaxGB GB; this is not current disk usage" -ForegroundColor DarkGray }
+    if ($offCPagefiles.Count -gt 0) {
+        $offCMaxGB = [math]::Round((($offCPagefiles | Measure-Object MaximumMB -Sum).Sum) / 1024, 2)
+        Write-Host "  Non-C maximum setting: $offCMaxGB GB; use this when evaluating another target drive" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "  C pagefile configuration was not detected" -ForegroundColor Yellow
     $recommendations += @{
         Priority = "info"
-        Action = "配置良好"
-        Detail = "页面文件已配置在非系统分区，无需调整"
+        Action = "Confirm the pagefile source before changing anything"
+        Detail = "The file may be on another drive, or the current session may lack permission to read the configuration."
         SpaceRelease = 0
-        PerformanceGain = "N/A"
+        PerformanceGain = "unknown"
     }
 }
 
-Write-Host "`n  [智能优化建议]" -ForegroundColor White
-
-if ($recommendations -and $recommendations.Count -gt 0) {
-    foreach ($rec in $recommendations) {
-        $priorityColor = switch ($rec.Priority) {
-            "high" { "Red" }
-            "medium" { "Yellow" }
-            "low" { "Green" }
-            default { "White" }
-        }
-        
-        $priorityLabel = switch ($rec.Priority) {
-            "high" { "🔴 高优先级" }
-            "medium" { "⚠️  中优先级" }
-            "low" { "✅ 低优先级" }
-            default { "ℹ️  信息" }
-        }
-        
-        Write-Host "  $priorityLabel" -ForegroundColor $priorityColor
-        Write-Host "    操作: $($rec.Action)" -ForegroundColor White
-        Write-Host "    说明: $($rec.Detail)" -ForegroundColor DarkGray
-        if ($rec.SpaceRelease -gt 0) {
-            Write-Host "    预期效果: 释放 $($rec.SpaceRelease) GB 空间 | 性能收益: $($rec.PerformanceGain)" -ForegroundColor DarkGray
-        }
+$cDiskNumber = $driveC.DiskNumber
+foreach ($drive in $driveSnapshots | Where-Object { $_.Drive -ne "C" -and $_.FreeGB -ge 32 }) {
+    $maxRequiredGB = if ($allConfiguredMaxMB -gt 0) { [math]::Round($allConfiguredMaxMB / 1024, 2) } else { 32 }
+    $hasHeadroom = $drive.FreeGB -ge ($maxRequiredGB + 8)
+    $sameDisk = ($null -ne $cDiskNumber -and $null -ne $drive.DiskNumber -and $cDiskNumber -eq $drive.DiskNumber)
+    $recommendation = if (-not $hasHeadroom) { "not enough headroom for current maximum" } elseif ($sameDisk) { "can free C space; speedup not guaranteed" } else { "candidate target; measure performance" }
+    $suitableDrives += [PSCustomObject]@{
+        Drive = $drive.Drive
+        FreeGB = $drive.FreeGB
+        MediaType = $drive.MediaType
+        BusType = $drive.BusType
+        DiskNumber = $drive.DiskNumber
+        SamePhysicalDiskAsC = $sameDisk
+        EnoughHeadroomForCurrentMax = $hasHeadroom
+        Recommendation = $recommendation
     }
 }
 
-if ($pagefileInfo.Assessment -ne "normal") {
-    Write-Host "`n  [实施步骤]" -ForegroundColor White
-    Write-Host "  1. 按 Win+R，输入 sysdm.cpl，回车打开系统属性" -ForegroundColor DarkGray
-    Write-Host "  2. 切换到「高级」选项卡，点击「性能」区域的「设置」" -ForegroundColor DarkGray
-    Write-Host "  3. 切换到「高级」选项卡，点击「虚拟内存」区域的「更改」" -ForegroundColor DarkGray
-    Write-Host "  4. 取消勾选「自动管理所有驱动器的分页文件大小」" -ForegroundColor DarkGray
-    Write-Host "  5. 选择C盘，勾选「自定义大小」，设置初始: 4096 MB，最大: 4096 MB，点击「设置」" -ForegroundColor DarkGray
-    
-    if ($suitableDrives -and $suitableDrives.Count -gt 0) {
-        $primaryDrive = $suitableDrives | Where-Object { $_.IsSSD } | Select-Object -First 1
-        if (-not $primaryDrive) {
-            $primaryDrive = $suitableDrives | Select-Object -First 1
-        }
-        
-        if ($primaryDrive) {
-            Write-Host "  6. 选择 ${primaryDrive.Drive}: 盘，勾选「自定义大小」，" -ForegroundColor DarkGray -NoNewline
-            Write-Host "初始: 32768 MB，最大: 65536 MB，点击「设置」" -ForegroundColor DarkGray
-            Write-Host "  7. 连续点击「确定」，重启计算机使更改生效" -ForegroundColor DarkGray
-        }
+if ($suitableDrives.Count -gt 0) {
+    Write-Host "`n  [Non-C candidates]" -ForegroundColor White
+    foreach ($candidate in $suitableDrives) {
+        $color = if ($candidate.EnoughHeadroomForCurrentMax) { "Green" } else { "Yellow" }
+        Write-Host "  $($candidate.Drive): free $($candidate.FreeGB) GB; media $($candidate.MediaType); $($candidate.Recommendation)" -ForegroundColor $color
     }
+} else {
+    Write-Host "`n  [Non-C candidates]" -ForegroundColor White
+    Write-Host "  No candidate drive met the space threshold" -ForegroundColor Yellow
 }
+
+Write-Host "`n  [Safety boundaries]" -ForegroundColor White
+Write-Host "  - Never delete, truncate, or move pagefile.sys directly" -ForegroundColor DarkGray
+Write-Host "  - Do not treat maximum configuration as current disk usage" -ForegroundColor DarkGray
+Write-Host "  - Keep a C pagefile when crash-dump requirements are not confirmed" -ForegroundColor DarkGray
+Write-Host "  - A different drive letter on the same physical disk does not guarantee an I/O gain" -ForegroundColor DarkGray
 
 $globalVMResult = [PSCustomObject]@{
-    Assessment = $pagefileInfo.Assessment
-    OnC = $pagefileInfo.OnC
-    TotalSize = $pagefileInfo.TotalSize
+    Assessment = if ($cPagefileKnown) { if ($freePercent -lt 20) { "critical" } elseif ($freePercent -lt 30) { "warning" } else { "normal" } } else { "unknown" }
+    OnC = $cPagefileKnown
+    TotalSize = $cActualBytes
+    ConfiguredCInitialMB = $cConfiguredInitialMB
+    ConfiguredCMaximumMB = $cConfiguredMaxMB
     FreePercent = $freePercent
+    PhysicalMemoryBytes = $ramBytes
+    Pagefiles = $pagefiles
+    Usage = $usageItems
     Recommendations = $recommendations
     SuitableDrives = $suitableDrives
+    DetectionSource = if ($pagefiles.Count -gt 0) { "HKLM PagingFiles + file metadata" } else { "permission-limited" }
 }
 
-if (-not $Global:VMAssessResult) {
-    $Global:VMAssessResult = $globalVMResult
-}
-
+$Global:VMAssessResult = $globalVMResult
 Write-Host ""

@@ -565,7 +565,7 @@
               "location": "D:\\编程软件\\TREA国内\\Trae CN"
             },
             "cache_locations": {
-              "primary": "C:\\Users\\decent\\AppData\\Roaming\\Trae",
+              "primary": "%APPDATA%\\Trae",
               "total_size": "~50MB initial (grows to 5-15GB over time)",
               "cache_types": {
                 "Cache": "6.25 MB - Main application cache",
@@ -737,7 +737,7 @@
                 "setting": "Windows Search Exclusions",
                 "location": "Settings > Privacy & Security > Searching Windows",
                 "recommendation": "Add TRAE cache folder to exclusions",
-                "command": "Add 'C:\\Users\\decent\\AppData\\Roaming\\Trae' to Windows Search exclusions",
+                "command": "Add '%APPDATA%\\Trae' to Windows Search exclusions",
                 "benefit": "Prevents Search indexer from indexing cache files"
               },
               {

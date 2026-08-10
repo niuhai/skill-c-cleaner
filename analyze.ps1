@@ -5,10 +5,10 @@
 )
 
 $SkillRoot = Split-Path -Parent $PSCommandPath
-if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
+if (-not $SkillRoot) { $SkillRoot = $PSScriptRoot }
 . (Join-Path $SkillRoot "_common.ps1")
 
-$VERSION = "6.1.2"
+$VERSION = "6.4.0"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 
@@ -49,6 +49,7 @@ $allCats = @(
     @{ Code = "L"; Script = "scan-im-apps.ps1" }
     @{ Code = "VM"; Script = "scan-virtual-memory.ps1" }
     @{ Code = "SI"; Script = "scan-search-index.ps1" }
+    @{ Code = "O"; Script = "scan-targeted-optimization.ps1" }
 )
 
 $selectedCats = if ($Categories -eq "all") { $allCats } else {
@@ -121,7 +122,7 @@ $catNamesCN = @{
     "A"="系统隐藏"; "B"="临时缓存"; "C"="开发缓存"; "D"="浏览器";
     "E"="应用数据"; "F"="大文件"; "G"="特殊占用"; "H"="安全软件";
     "I"="多版本"; "J"="重复运行时"; "K"="输入法"; "L"="即时通讯";
-    "VM"="虚拟内存"; "SI"="Search索引"
+    "VM"="虚拟内存"; "SI"="Search索引"; "O"="定向优化"
 }
 
 $knownBloat = @{

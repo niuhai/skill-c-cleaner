@@ -15,7 +15,7 @@
   </p>
   
   <p align="center">
-    <img src="https://img.shields.io/badge/version-v6.0.0-blue.svg" alt="Version"/>
+    <img src="https://img.shields.io/badge/version-v6.4.0-blue.svg" alt="Version"/>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
     <img src="https://img.shields.io/badge/powershell-5.1%2B-blue.svg" alt="PowerShell"/>
     <img src="https://img.shields.io/badge/platform-windows-lightgrey.svg" alt="Platform"/>

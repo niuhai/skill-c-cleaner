@@ -16,7 +16,9 @@ param(
 )
 
 $skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-if (-not (Test-Path (Join-Path $skillRoot "_common.ps1"))) { $skillRoot = "C:\.trae\skills\c-drive-cleaner" }
+if (-not (Test-Path (Join-Path $skillRoot "_common.ps1"))) {
+    throw "Skill root could not be resolved from the script location."
+}
 . (Join-Path $skillRoot "_common.ps1")
 
 $LogFile = Join-Path (Get-SkillRoot) "cleanup_log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"

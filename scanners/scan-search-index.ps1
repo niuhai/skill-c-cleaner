@@ -33,13 +33,12 @@ Write-Host "Dynamically discovering development directories and index burdens...
 Write-Host ""
 
 # 1. Scan common development root directories (prioritize user's actual paths)
-$userName = $env:USERNAME
 $devRoots = @(
-    "C:\Users\$userName\source\repos",
-    "C:\Users\$userName\source",
-    "C:\Users\$userName\Documents\GitHub",
-    "C:\Users\$userName\Documents\Projects",
-    "C:\Users\$userName\Desktop\Projects",
+    "$env:USERPROFILE\source\repos",
+    "$env:USERPROFILE\source",
+    "$env:USERPROFILE\Documents\GitHub",
+    "$env:USERPROFILE\Documents\Projects",
+    "$env:USERPROFILE\Desktop\Projects",
     "D:\GitHub",
     "D:\Projects",
     "D:\Code",
@@ -48,10 +47,7 @@ $devRoots = @(
     "D:\work",
     "D:\Workspace",
     "D:\src",
-    "C:\Users\$env:USERNAME\source",
-    "C:\Users\$env:USERNAME\Documents\GitHub",
-    "C:\Users\$env:USERNAME\Documents\Projects",
-    "C:\Users\$env:USERNAME\Desktop\Projects"
+    "$env:USERPROFILE\Desktop\Projects"
 )
 
 $foundProjects = @()

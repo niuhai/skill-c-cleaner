@@ -2,8 +2,10 @@
     [string]$OutputFormat = "console"
 )
 
-$SkillRoot = Split-Path -Parent $PSCommandPath
-if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
+$SkillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+if (-not (Test-Path (Join-Path $SkillRoot "_common.ps1"))) {
+    throw "Skill root could not be resolved from the script location."
+}
 . (Join-Path $SkillRoot "_common.ps1")
 
 Write-Host ""
