@@ -2,7 +2,9 @@
 
 | 版本 | 日期 | 关键词 | 规模 |
 |------|------|--------|------|
-| v6.4.0 | 2026-08-10 | 定向缓存优化 + 虚拟内存分析强化 | ✨ Minor |
+| v6.5.0 | 2026-08-13 | 原生并发扫描、同遍增长聚合、精确去重 | ⚡ Minor |
+| v6.4.1 | 2026-08-12 | 原生大文件扫描初版 | ⚡ Patch |
+| v6.4.0 | 2026-08-12 | 定向优化、实际占用、增长再生、虚拟内存 | 📐 Minor |
 | v6.3 | 2026-05-18 | 清理引擎深度优化 | ⚡ Hotfix |
 | v6.1.2 | 2026-05-16 | 清理引擎性能修复 | ⚡ Hotfix |
 | v6.1.0 | 2026-05-16 | 生产级重构 | 🏭 Major |
@@ -15,13 +17,37 @@
 
 ---
 
-## v6.4.0 (2026-08-10) — 定向缓存优化与虚拟内存分析强化
+## v6.5.0 (2026-08-13) — ⚡ 高性能扫描与可信核算
 
-- 新增 Qoder、WorkBuddy、Codex 定向扫描与清理配置；默认预览，保留工作区、历史记录、全局状态、当前运行时和模型文件。
+- 新增 Win32 `FindFirstFileExW` 原生扫描器，将 Users/AppData、Windows、ProgramData 和 Program Files 拆成有界并发分片；跨分片用户目录统计统一合并。
+- F 类在同一遍约 58 万文件枚举中同时生成 TOP 20、用户一级目录大小和 37 个增长目标统计，不再为 GR 重扫父子目录。
+- 快速模式读取带时间戳和 `measurementSource` 的增长快照；GR 从 114.9 秒降到 0.2 秒，完整 F→GR 复用时约 0.5 秒。
+- 重写 J 类 Electron/CEF 盘点，拆分 Microsoft/Google/Tencent 厂商容器；整个应用体积和 runtime-shaped 字节只进入 inventory，不进入可清理额度。
+- 应用签名只核算 `sub_cleanable` 精确子路径；Search 索引负担只作为优化线索；最终清理总量按路径层级去重。
+- 增加逐分类耗时、文件数、分区数、跳过目录、缓存命中和 JSON scanner metadata，便于后续持续优化。
+- 本机验证：F 从约 111 秒降到 14.9–36.2 秒；`analyze.ps1 -Fast` 从 153.6 秒降到 26.6 秒；全程只读，未删除数据。
+
+---
+
+## v6.4.1 — F scanner performance
+
+- Replaced the PowerShell `Get-ChildItem -Recurse` large-file scan with an in-process .NET directory enumerator.
+- Maintains a bounded TOP-N candidate set, skips reparse-point directories, and continues through inaccessible folders while reporting skip counts.
+- Keeps protected Windows trees out of the file-level scan because A/WU/SA already provide their directory-level evidence.
+- Real-machine validation: 504,251 files in about 97 seconds for TOP 20; no files were modified.
+
+## v6.4.0 (2026-08-12) — 📐 可验证空间核算
+
+- 新增 Qoder、WorkBuddy、Codex 定向扫描与清理配置；默认预览，保留工作区、历史、全局状态、当前 runtime 和模型文件。
 - 新增进程占用检查、允许目录边界校验与风险分级，降低误删风险。
-- 强化虚拟内存分析：优先读取注册表配置，权限受限时安全降级，并区分配置上限、实际占用、提交容量与 I/O 性能。
-- 比较固定磁盘的剩余空间与物理磁盘属性，不把迁移分页文件描述为必然提速；保留崩溃转储和重启后复检要求。
-- 移除脚本中的固定本地安装路径，改为按脚本位置解析，避免仓库携带机器环境信息。
+- 强化虚拟内存分析：区分配置上限、实际占用、提交容量和 I/O 性能；不把迁移页面文件描述为必然提速。
+- 新增 NTFS 分配字节测量，按文件标识去重硬链接，并标记稀疏/压缩文件和部分读取状态。
+- 将增长目标分为互不重叠的 `coverage` 根和仅用于归因的 `detail` 项，避免父子目录重复相加。
+- 升级增长快照为 schema 2；旧版测量基线自动失效，不产生伪增量。
+- 新增 Trae、TRAE SOLO、LarkShell、WPS、Temp、Playwright、剪映、updater、Windows Update 等应用级追踪。
+- 新增 WU 类和 `$WinREAgent`、更新下载、待重启信号检查。
+- 定向清理记录目标分配字节与 C 盘真实可用空间变化，并支持 5m/1h/24h 再生复测。
+- 移除脚本中的固定本机安装路径，按脚本位置和环境变量解析。
 
 ---
 

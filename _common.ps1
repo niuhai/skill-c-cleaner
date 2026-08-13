@@ -5,6 +5,14 @@
 if (-not $Global:CDriveScanResults) {
     $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 }
+if ($null -eq $Global:CDriveInventory) {
+    $Global:CDriveInventory = [System.Collections.ArrayList]::new()
+}
+if ($null -eq $Global:CDriveMeasurementCache) {
+    $Global:CDriveMeasurementCache = @{}
+}
+if ($null -eq $Global:CDriveMeasurementCacheHits) { $Global:CDriveMeasurementCacheHits = 0 }
+if ($null -eq $Global:CDriveMeasurementCacheMisses) { $Global:CDriveMeasurementCacheMisses = 0 }
 
 function Get-SkillRoot {
     if ($PSCommandPath) {
@@ -21,21 +29,268 @@ function Get-SkillRoot {
 
 function Get-FolderSizeFast {
     param([string]$Path)
-    if (-not (Test-Path $Path -ErrorAction SilentlyContinue)) { return @{ Size = 0; Count = 0; Found = $false } }
+    $measurement = Get-PathLogicalMeasurement -Path $Path
+    return @{
+        Size = [int64]$measurement.Bytes
+        Count = [int64]$measurement.FileCount
+        Found = ($measurement.Status -ne "missing")
+        Status = $measurement.Status
+        Evidence = $measurement.Evidence
+    }
+}
+
+function Initialize-NativeFileScanner {
+    if ("CleanSight.NativeFileScanner" -as [type]) { return }
+    $sourcePath = Join-Path (Get-SkillRoot) "scripts\NativeFileScanner.cs"
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+        throw "Native scanner source not found: $sourcePath"
+    }
+    $source = Get-Content -LiteralPath $sourcePath -Raw -Encoding UTF8
+    Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
+}
+
+function Complete-PathLogicalMeasurement {
+    param(
+        [string]$CacheKey,
+        [object]$Measurement,
+        [switch]$NoCache
+    )
+    if ($Global:CDriveMeasurementCacheEnabled -and -not $NoCache -and $CacheKey) {
+        $Global:CDriveMeasurementCache[$CacheKey] = $Measurement
+    }
+    return $Measurement
+}
+
+function Get-PathLogicalMeasurement {
+    <#
+    Measure logical bytes without changing the source. Directories use a unique
+    robocopy /L probe and /XJ so junctions are not followed or double-counted.
+    Status is ok, partial, inaccessible, or missing; callers must not treat a
+    partial measurement as a reliable cleanup estimate.
+    #>
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [switch]$NoCache
+    )
+
+    $cacheKey = ""
+    try { $cacheKey = ([IO.Path]::GetFullPath($Path)).TrimEnd('\').ToLowerInvariant() } catch { $cacheKey = $Path.ToLowerInvariant() }
+    if ($Global:CDriveMeasurementCacheEnabled -and -not $NoCache) {
+        if ($Global:CDriveMeasurementCache.ContainsKey($cacheKey)) {
+            $Global:CDriveMeasurementCacheHits++
+            return $Global:CDriveMeasurementCache[$cacheKey]
+        }
+        $Global:CDriveMeasurementCacheMisses++
+    }
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $item) {
+        $parent = Split-Path -Parent $Path
+        $leaf = Split-Path -Leaf $Path
+        if ($parent -and $leaf -and (Test-Path -LiteralPath $parent -PathType Container -ErrorAction SilentlyContinue)) {
+            $item = Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $leaf } | Select-Object -First 1
+        }
+    }
+    if (-not $item) {
+        $result = [pscustomobject]@{ Path=$Path; Status="missing"; Bytes=[int64]0; FileCount=[int64]0; Evidence="path missing or not enumerable" }
+        return (Complete-PathLogicalMeasurement -CacheKey $cacheKey -Measurement $result -NoCache:$NoCache)
+    }
+    if (-not $item.PSIsContainer) {
+        $result = [pscustomobject]@{ Path=$Path; Status="ok"; Bytes=[int64]$item.Length; FileCount=[int64]1; Evidence="file length" }
+        return (Complete-PathLogicalMeasurement -CacheKey $cacheKey -Measurement $result -NoCache:$NoCache)
+    }
+
     try {
-        $dummy = "C:\__ROBOSIZE_$(Get-Random)__"
-        $output = & robocopy $Path $dummy /L /S /NFL /NDL /NJH /BYTES 2>&1
-        $bytesLine = $output | Where-Object { $_ -match '^\s*Bytes' } | Select-Object -Last 1
-        if ($bytesLine) {
-            $nums = [regex]::Matches($bytesLine, '\d+') | ForEach-Object { $_.Value }
-            if ($nums.Count -ge 1) {
-                return @{ Size = [long]$nums[0]; Count = 0; Found = $true }
+        $probe = Join-Path $env:TEMP ("cdrive-size-probe-" + [guid]::NewGuid().ToString("N"))
+        $output = @(& robocopy $Path $probe /L /S /XJ /NFL /NDL /NJH /BYTES /R:0 /W:0 2>&1)
+        $exitCode = $LASTEXITCODE
+        $text = $output | Out-String
+        $byteMatch = [regex]::Match($text, '(?im)^\s*Bytes\s*:\s*([\d,]+)')
+        $fileMatch = [regex]::Match($text, '(?im)^\s*Files\s*:\s*([\d,]+)')
+        if ($byteMatch.Success) {
+            $bytes = [int64](($byteMatch.Groups[1].Value -replace ',',''))
+            $files = if ($fileMatch.Success) { [int64](($fileMatch.Groups[1].Value -replace ',','')) } else { [int64]0 }
+            $partial = ($exitCode -ge 8) -or ($text -match '(?im)Access is denied|ERROR\s+5\s+\(0x00000005\)|拒绝访问')
+            $status = if ($partial) { "partial" } else { "ok" }
+            $result = [pscustomobject]@{ Path=$Path; Status=$status; Bytes=$bytes; FileCount=$files; Evidence="robocopy /L /XJ; exit=$exitCode" }
+            return (Complete-PathLogicalMeasurement -CacheKey $cacheKey -Measurement $result -NoCache:$NoCache)
+        }
+    } catch {
+        $result = [pscustomobject]@{ Path=$Path; Status="inaccessible"; Bytes=[int64]0; FileCount=[int64]0; Evidence=$_.Exception.Message }
+        return (Complete-PathLogicalMeasurement -CacheKey $cacheKey -Measurement $result -NoCache:$NoCache)
+    }
+    $result = [pscustomobject]@{ Path=$Path; Status="inaccessible"; Bytes=[int64]0; FileCount=[int64]0; Evidence="robocopy summary unavailable" }
+    return (Complete-PathLogicalMeasurement -CacheKey $cacheKey -Measurement $result -NoCache:$NoCache)
+}
+
+function Initialize-NtfsAllocationProbe {
+    if ("CleanSight.NtfsAllocationProbe" -as [type]) { return }
+    $source = @'
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+namespace CleanSight {
+    public sealed class NtfsProbeResult {
+        public bool Success;
+        public long AllocatedBytes;
+        public string Identity;
+        public uint LinkCount;
+        public int ErrorCode;
+    }
+
+    public static class NtfsAllocationProbe {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BY_HANDLE_FILE_INFORMATION {
+            public uint FileAttributes;
+            public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+            public uint VolumeSerialNumber;
+            public uint FileSizeHigh;
+            public uint FileSizeLow;
+            public uint NumberOfLinks;
+            public uint FileIndexHigh;
+            public uint FileIndexLow;
+        }
+
+        [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+        private static extern uint GetCompressedFileSizeW(string fileName, out uint fileSizeHigh);
+
+        [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+        private static extern SafeFileHandle CreateFileW(string fileName, uint desiredAccess, uint shareMode,
+            IntPtr securityAttributes, uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
+
+        [DllImport("kernel32.dll", SetLastError=true)]
+        private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out BY_HANDLE_FILE_INFORMATION info);
+
+        public static NtfsProbeResult Probe(string path) {
+            var result = new NtfsProbeResult();
+            uint high;
+            uint low = GetCompressedFileSizeW(path, out high);
+            int sizeError = Marshal.GetLastWin32Error();
+            if (low == 0xFFFFFFFF && sizeError != 0) {
+                result.ErrorCode = sizeError;
+                return result;
+            }
+            result.AllocatedBytes = ((long)high << 32) | low;
+
+            const uint share = 1 | 2 | 4;
+            const uint openExisting = 3;
+            using (SafeFileHandle handle = CreateFileW(path, 0, share, IntPtr.Zero, openExisting, 0, IntPtr.Zero)) {
+                if (handle.IsInvalid) {
+                    result.ErrorCode = Marshal.GetLastWin32Error();
+                    return result;
+                }
+                BY_HANDLE_FILE_INFORMATION info;
+                if (!GetFileInformationByHandle(handle, out info)) {
+                    result.ErrorCode = Marshal.GetLastWin32Error();
+                    return result;
+                }
+                result.Identity = info.VolumeSerialNumber.ToString("X8") + ":" + info.FileIndexHigh.ToString("X8") + info.FileIndexLow.ToString("X8");
+                result.LinkCount = info.NumberOfLinks;
+                result.Success = true;
+                return result;
             }
         }
-    } catch {}
-    $files = Get-ChildItem $Path -Recurse -Force -File -ErrorAction SilentlyContinue
-    $size = ($files | Measure-Object Length -Sum).Sum
-    return @{ Size = if ($size) { [long]$size } else { 0 }; Count = @($files).Count; Found = $true }
+    }
+}
+'@
+    Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
+}
+
+function Get-NtfsPathMeasurement {
+    <#
+    Measure directory-entry logical bytes, unique logical bytes, and allocated
+    NTFS bytes. Hard links are deduplicated by file identity. This is exact for
+    successfully probed files but intentionally bounded by time and file count.
+    #>
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [int]$MaxFiles = 200000,
+        [int]$MaxSeconds = 120
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{ Path=$Path; Status="missing"; EntryLogicalBytes=[int64]0; UniqueLogicalBytes=[int64]0; AllocatedBytes=[int64]0; FileCount=0; UniqueFileCount=0; HardlinkDuplicates=0; SparseOrCompressedFiles=0; Errors=0; ElapsedSeconds=0 }
+    }
+
+    try { Initialize-NtfsAllocationProbe } catch {
+        return [pscustomobject]@{ Path=$Path; Status="probe-unavailable"; EntryLogicalBytes=[int64]0; UniqueLogicalBytes=[int64]0; AllocatedBytes=[int64]0; FileCount=0; UniqueFileCount=0; HardlinkDuplicates=0; SparseOrCompressedFiles=0; Errors=1; ElapsedSeconds=0; Evidence=$_.Exception.Message }
+    }
+
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $stack = New-Object 'System.Collections.Generic.Stack[string]'
+    $seen = @{}
+    $entryLogical = [int64]0
+    $uniqueLogical = [int64]0
+    $allocated = [int64]0
+    $fileCount = 0
+    $uniqueCount = 0
+    $hardlinkDuplicates = 0
+    $specialCount = 0
+    $errors = 0
+    $truncated = $false
+
+    $rootItem = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    $singleFile = $null
+    if (-not $rootItem) { $errors++; $truncated = $true }
+    elseif ($rootItem.PSIsContainer) { $stack.Push($rootItem.FullName) }
+    else { $singleFile = $rootItem }
+
+    if ($singleFile) {
+        $fileCount = 1
+        $entryLogical = [int64]$singleFile.Length
+        if (($singleFile.Attributes -band [IO.FileAttributes]::SparseFile) -ne 0 -or ($singleFile.Attributes -band [IO.FileAttributes]::Compressed) -ne 0) { $specialCount = 1 }
+        $probe = [CleanSight.NtfsAllocationProbe]::Probe($singleFile.FullName)
+        if ($probe.Success) {
+            $seen[$probe.Identity] = $true
+            $uniqueCount = 1
+            $uniqueLogical = [int64]$singleFile.Length
+            $allocated = [int64]$probe.AllocatedBytes
+        } else { $errors++ }
+    }
+
+    while ($stack.Count -gt 0 -and -not $truncated) {
+        $current = $stack.Pop()
+        $enumerationErrors = @()
+        $children = @(Get-ChildItem -LiteralPath $current -Force -ErrorAction SilentlyContinue -ErrorVariable enumerationErrors)
+        if ($enumerationErrors.Count -gt 0) { $errors += $enumerationErrors.Count }
+        foreach ($child in $children) {
+            if ($watch.Elapsed.TotalSeconds -ge $MaxSeconds -or $fileCount -ge $MaxFiles) { $truncated = $true; break }
+            if ($child.PSIsContainer) {
+                if (($child.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) { $stack.Push($child.FullName) }
+                continue
+            }
+            $fileCount++
+            $length = [int64]$child.Length
+            $entryLogical += $length
+            if (($child.Attributes -band [IO.FileAttributes]::SparseFile) -ne 0 -or ($child.Attributes -band [IO.FileAttributes]::Compressed) -ne 0) { $specialCount++ }
+            $probe = [CleanSight.NtfsAllocationProbe]::Probe($child.FullName)
+            if (-not $probe.Success) { $errors++; continue }
+            if ($seen.ContainsKey($probe.Identity)) { $hardlinkDuplicates++; continue }
+            $seen[$probe.Identity] = $true
+            $uniqueCount++
+            $uniqueLogical += $length
+            $allocated += [int64]$probe.AllocatedBytes
+        }
+    }
+
+    $watch.Stop()
+    $status = if ($truncated) { "bounded-partial" } elseif ($errors -gt 0) { "partial" } else { "ok" }
+    return [pscustomobject]@{
+        Path = $Path
+        Status = $status
+        EntryLogicalBytes = $entryLogical
+        UniqueLogicalBytes = $uniqueLogical
+        AllocatedBytes = $allocated
+        FileCount = $fileCount
+        UniqueFileCount = $uniqueCount
+        HardlinkDuplicates = $hardlinkDuplicates
+        SparseOrCompressedFiles = $specialCount
+        Errors = $errors
+        ElapsedSeconds = [math]::Round($watch.Elapsed.TotalSeconds, 2)
+    }
 }
 
 function Expand-EnvPath {
@@ -74,25 +329,74 @@ function Test-AppSignature {
     $found = $false
     $totalSize = 0L
     $foundPath = ""
+    $measurements = [System.Collections.ArrayList]::new()
+    $seenPaths = @{}
     foreach ($dp in $App.detect_paths) {
         $expanded = Expand-EnvPath $dp
         if (-not (Test-Path $expanded -ErrorAction SilentlyContinue)) { continue }
         $found = $true
-        $foundPath = $expanded
+        if (-not $foundPath) { $foundPath = $expanded }
+        $candidatePaths = [System.Collections.ArrayList]::new()
         if ($App.sub_paths) {
-            $subSize = 0L
             foreach ($sub in $App.sub_paths) {
                 $subFull = Join-Path $expanded $sub
-                $r = Get-FolderSizeFast $subFull
-                if ($r.Found) { $subSize += $r.Size }
+                if ($sub -match '[*?]') {
+                    foreach ($match in @(Get-ChildItem -Path $subFull -Force -ErrorAction SilentlyContinue)) {
+                        [void]$candidatePaths.Add($match.FullName)
+                    }
+                } elseif (Test-Path -LiteralPath $subFull -ErrorAction SilentlyContinue) {
+                    [void]$candidatePaths.Add($subFull)
+                }
             }
-            $totalSize += $subSize
+        } elseif ($App.sub_cleanable) {
+            foreach ($sub in @(([string]$App.sub_cleanable) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+                $subFull = Join-Path $expanded $sub
+                if ($sub -match '[*?]') {
+                    foreach ($match in @(Get-ChildItem -Path $subFull -Force -ErrorAction SilentlyContinue)) {
+                        [void]$candidatePaths.Add($match.FullName)
+                    }
+                } elseif (Test-Path -LiteralPath $subFull -ErrorAction SilentlyContinue) {
+                    [void]$candidatePaths.Add($subFull)
+                }
+            }
         } else {
-            $r = Get-FolderSizeFast $expanded
-            $totalSize += $r.Size
+            [void]$candidatePaths.Add($expanded)
+        }
+
+        # Keep only non-overlapping exact paths. A parent measurement already
+        # contains its descendants and must not be added twice.
+        $selected = [System.Collections.ArrayList]::new()
+        foreach ($candidate in @($candidatePaths | Sort-Object { $_.Length })) {
+            $candidateFull = ""
+            try { $candidateFull = [IO.Path]::GetFullPath([string]$candidate).TrimEnd('\') } catch { continue }
+            $covered = $false
+            foreach ($parent in @($selected)) {
+                $prefix = ([string]$parent).TrimEnd('\') + '\'
+                if ($candidateFull.Equals([string]$parent, [StringComparison]::OrdinalIgnoreCase) -or
+                    $candidateFull.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                    $covered = $true
+                    break
+                }
+            }
+            if (-not $covered) { [void]$selected.Add($candidateFull) }
+        }
+
+        foreach ($candidate in @($selected)) {
+            $key = $candidate.ToLowerInvariant()
+            if ($seenPaths.ContainsKey($key)) { continue }
+            $seenPaths[$key] = $true
+            $r = Get-FolderSizeFast $candidate
+            if (-not $r.Found -or $r.Size -le 0) { continue }
+            $totalSize += [int64]$r.Size
+            [void]$measurements.Add([pscustomobject]@{
+                Path = $candidate
+                Bytes = [int64]$r.Size
+                Status = $r.Status
+                Evidence = $r.Evidence
+            })
         }
     }
-    return @{ Found = $found; Size = $totalSize; Path = $foundPath }
+    return @{ Found = $found; Size = $totalSize; Path = $foundPath; Measurements = @($measurements) }
 }
 
 function Convert-RiskLevel {
@@ -113,7 +417,8 @@ function Write-ScanResult {
         [string]$Advice,
         [string]$Migration,
         [string]$Note,
-        [string]$Source = ""
+        [string]$Source = "",
+        [object[]]$Measurements = @()
     )
     $sizeMB = [math]::Round($Size / 1MB, 2)
     $sizeGB = [math]::Round($Size / 1GB, 2)
@@ -140,6 +445,10 @@ function Write-ScanResult {
         if ($Migration) { Write-Host "     迁移: $Migration" -ForegroundColor DarkGray }
         if ($Note) { Write-Host "     备注: $Note" -ForegroundColor DarkGray }
     }
+    $measurementRows = @($Measurements)
+    if ($measurementRows.Count -eq 0 -and $Path -and $Size -gt 0) {
+        $measurementRows = @([pscustomobject]@{ Path = $Path; Bytes = [int64]$Size; Status = "reported"; Evidence = $Source })
+    }
     [void]$Global:CDriveScanResults.Add(@{
         Category = $Category
         Name     = $Name
@@ -150,6 +459,44 @@ function Write-ScanResult {
         Migration = $Migration
         Note     = $Note
         Source   = $Source
+        Measurements = $measurementRows
+    })
+}
+
+function Write-InventoryResult {
+    param(
+        [string]$Category,
+        [string]$Name,
+        [long]$Size,
+        [string]$Path,
+        [string]$Kind = "inventory",
+        [string]$Evidence = "",
+        [string]$Access = "ok"
+    )
+    if ($null -eq $Global:CDriveInventory) {
+        $Global:CDriveInventory = [System.Collections.ArrayList]::new()
+    }
+    $sizeMB = [math]::Round($Size / 1MB, 2)
+    $sizeGB = [math]::Round($Size / 1GB, 2)
+    $sizeStr = if ($sizeGB -ge 1) { "$sizeGB GB" } elseif ($sizeMB -ge 1) { "$sizeMB MB" } else { "$([math]::Round($Size / 1KB, 1)) KB" }
+    $icon = switch ($Access) {
+        "inaccessible" { "🔒" }
+        "partial" { "⚠️" }
+        "bounded-partial" { "⚠️" }
+        default { "ℹ️" }
+    }
+    Write-Host "  $icon ${Name}: $sizeStr" -ForegroundColor DarkCyan
+    if ($Path) { Write-Host "     路径: $Path" -ForegroundColor DarkGray }
+    if ($Evidence) { Write-Host "     证据: $Evidence" -ForegroundColor DarkGray }
+    [void]$Global:CDriveInventory.Add(@{
+        Category = $Category
+        Name = $Name
+        SizeMB = $sizeMB
+        SizeBytes = $Size
+        Path = $Path
+        Kind = $Kind
+        Evidence = $Evidence
+        Access = $Access
     })
 }
 
@@ -350,7 +697,8 @@ function Invoke-SignatureScan {
             }
             Write-ScanResult -Category $CategoryLabel -Name $app.name `
                 -Size $result.Size -Risk $risk -Path $result.Path `
-                -Advice $advice -Migration $migration -Note $app.note -Source "DB"
+                -Advice $advice -Migration $migration -Note $app.note -Source "DB" `
+                -Measurements $result.Measurements
         }
     }
     $customApps = Load-CustomSigs
@@ -361,7 +709,7 @@ function Invoke-SignatureScan {
             $risk = Convert-RiskLevel $app.cleanable
             Write-ScanResult -Category $CategoryLabel -Name $app.name `
                 -Size $result.Size -Risk $risk -Path $result.Path `
-                -Note $app.note -Source "自定义"
+                -Note $app.note -Source "自定义" -Measurements $result.Measurements
         }
     }
 }

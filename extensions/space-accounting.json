@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "targets": [
+    { "id": "qoder", "name": "Qoder data", "path": "%APPDATA%\\Qoder", "maxFiles": 120000, "maxSeconds": 60 },
+    { "id": "user-temp", "name": "User Temp", "path": "%LOCALAPPDATA%\\Temp", "maxFiles": 150000, "maxSeconds": 60 },
+    { "id": "wps-cloud-cache", "name": "WPS cloud local cache", "path": "%USERPROFILE%\\WPS Cloud Files\\.*\\cachedata", "maxFiles": 200000, "maxSeconds": 90 },
+    { "id": "trae-cn-logs", "name": "Trae CN logs", "path": "%APPDATA%\\Trae CN\\logs", "maxFiles": 120000, "maxSeconds": 60 },
+    { "id": "trae-cn-cache", "name": "Trae CN CachedData", "path": "%APPDATA%\\Trae CN\\CachedData", "maxFiles": 120000, "maxSeconds": 60 },
+    { "id": "trae-solo-logs", "name": "TRAE SOLO CN logs", "path": "%APPDATA%\\TRAE SOLO CN\\logs", "maxFiles": 120000, "maxSeconds": 60 },
+    { "id": "trae-solo-cache", "name": "TRAE SOLO CN CachedData", "path": "%APPDATA%\\TRAE SOLO CN\\CachedData", "maxFiles": 120000, "maxSeconds": 60 },
+    { "id": "winre-agent", "name": "Windows recovery update residue", "path": "C:\\$WinREAgent", "maxFiles": 100000, "maxSeconds": 60 }
+  ]
+}

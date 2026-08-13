@@ -95,3 +95,52 @@
 ---
 
 *最后更新: 2026-05-18（含清理后扫描 + 性能对比）*
+
+---
+
+## v6.2.0：有界迭代与增长扫描（2026-08-10）
+
+| 模式 | 实际耗时 | 说明 |
+|---|---:|---|
+| `track-growth.ps1 -Mode compare` | 约 20-35 秒 | 重点目录 robocopy `/L` 统计，不复制文件 |
+| `analyze.ps1 -Fast` | 约 84 秒 | 14 类快速证据集，跳过 F/H |
+| `scan-large-files.ps1` | 约 122 秒 | 仍是慢速、按需执行的全盘文件排行 |
+| `iteration-loop.ps1 -Mode diagnose` | 约 105 秒 | 扫描、增长对比、清理预览、状态落盘完整收口 |
+
+### 性能结论
+
+快速模式不再因为全盘大文件扫描超时而丢失收口；增长追踪可作为每日监控的轻量入口。F 类仍需作为独立里程碑任务运行，不能伪装成即时扫描。
+
+---
+
+## v6.4.0：实际占用与层级增长（2026-08-12）
+
+| 操作 | 实际耗时 | 说明 |
+|---|---:|---|
+| v2 层级增长扫描 | 约 49-118 秒 | 37 个 coverage/detail 路径，只读 `/L /XJ` 测量；Temp 活跃时波动较大 |
+| SA 八个重点路径 | 约 7.5 秒 | 文件级 NTFS 分配字节与硬链接去重 |
+| WU 更新残留扫描 | 约 3.2 秒 | WinRE、更新下载、CBS/DISM、待重启信号 |
+| Qoder 实际占用核算 | 约 5-6 秒 | 约 10,733 个文件 |
+
+SA 是按需核算层，不默认加入快速模式；增长扫描保留低置信度状态并用覆盖根与驱动器增量对账。
+
+## v6.4.1 — large-file scanner benchmark (2026-08-12)
+
+| Mode | Measured time | Evidence |
+|---|---:|---|
+| `scan-large-files.ps1 -TopN 20` | 97.3 seconds | .NET in-process enumeration; 504,251 files; 6 skipped directories |
+| previous PowerShell recursive path | over 5 minutes without output | stopped before producing a complete TOP list |
+
+The new scanner is still an on-demand scan, but it now completes on this machine and preserves the read-only boundary.
+
+## v6.5.0 — partitioned native scan and growth reuse (2026-08-13)
+
+| Mode | Before | v6.5.0 measured | Evidence |
+|---|---:|---:|---|
+| F TOP 20 full C scan | about 111 s / 504k–577k files | 14.9–36.2 s / about 580k files | 422 partitions, parallelism 4, 140 inaccessible directories reported |
+| J Electron/CEF inventory | 21.4 s | 11.5–14.4 s | 376k–377k files; vendor containers split into product roots |
+| GR in Fast mode | 114.9 s live rescan | 0.2 s cached snapshot | timestamp and measurement source are displayed |
+| F followed by GR | about 150 s class | 16.0 s total; GR 0.5 s | 37 growth targets aggregated during F enumeration |
+| `analyze.ps1 -Fast` | 153.6 s | 26.6 s | 16 categories, JSON report, no scanner failures |
+
+The ranges reflect Windows filesystem cache and active application churn. Coverage and inaccessible counts are retained so a faster result cannot silently claim higher confidence.

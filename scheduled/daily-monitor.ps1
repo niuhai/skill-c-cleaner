@@ -24,6 +24,14 @@ $logDir = "C:\cleanup_snapshots\daily"
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $report | Out-File "$logDir\$(Get-Date -Format 'yyyyMMdd').txt" -Append -Encoding UTF8
 
+# 用一遍原生 F 扫描同时记录重点目录快照，避免逐路径 robocopy 重扫。
+$skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+$analyzeScript = Join-Path $skillRoot "analyze.ps1"
+if (Test-Path -LiteralPath $analyzeScript) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $analyzeScript -Categories "F,GR" -OutputFormat console -RecordGrowth 2>&1 |
+        Out-File "$logDir\$(Get-Date -Format 'yyyyMMdd').txt" -Append -Encoding UTF8
+}
+
 if ($usedPercent -ge $threshold) {
     Write-Host "⚠️ 告警: C盘使用率 ${usedPercent}% 超过阈值 ${threshold}%!" -ForegroundColor Red
     Write-Host "可用空间仅 ${freeGB} GB，建议尽快清理" -ForegroundColor Red

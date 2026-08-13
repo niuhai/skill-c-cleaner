@@ -1,40 +1,33 @@
-
 $root = $PSScriptRoot
-$files = @(
-    "$root\_common.ps1",
-    "$root\analyze.ps1",
-    "$root\cleaners\clean-safe.ps1",
-    "$root\cleaners\clean-apps.ps1",
-    "$root\cleaners\clean-deep.ps1",
-    "$root\cleaners\clean-dev-caches.ps1",
-    "$root\cleaners\clean-targeted-optimization.ps1",
-    "$root\scanners\scan-system-hidden.ps1",
-    "$root\scanners\scan-virtual-memory.ps1",
-    "$root\scanners\scan-targeted-optimization.ps1"
-)
+$files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter "*.ps1" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '\\reports\\' })
 
 $allOk = $true
-foreach ($f in $files) {
+foreach ($file in $files) {
     $tokens = $null
     $parseErrors = $null
     try {
-        [System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$tokens, [ref]$parseErrors)
-        if ($parseErrors) {
-            Write-Host "  [FAIL] $f" -ForegroundColor Red
-            $parseErrors | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        [void][System.Management.Automation.Language.Parser]::ParseFile(
+            $file.FullName,
+            [ref]$tokens,
+            [ref]$parseErrors
+        )
+        if ($parseErrors.Count -gt 0) {
+            Write-Host "  [FAIL] $($file.FullName)" -ForegroundColor Red
+            $parseErrors | ForEach-Object { Write-Host "    $($_.Message)" -ForegroundColor Red }
             $allOk = $false
         } else {
-            Write-Host "  [OK]   $f" -ForegroundColor Green
+            Write-Host "  [OK]   $($file.FullName)" -ForegroundColor Green
         }
     } catch {
-        Write-Host "  [FAIL] $f : $_" -ForegroundColor Red
+        Write-Host "  [FAIL] $($file.FullName): $($_.Exception.Message)" -ForegroundColor Red
         $allOk = $false
     }
 }
 
-if ($allOk) {
-    Write-Host "`nAll syntax checks passed!" -ForegroundColor Green
-} else {
-    Write-Host "`nSome checks failed!" -ForegroundColor Red
+if (-not $allOk) {
+    Write-Host "`nSome syntax checks failed." -ForegroundColor Red
     exit 1
 }
+
+Write-Host "`nAll $($files.Count) PowerShell syntax checks passed." -ForegroundColor Green

@@ -20,6 +20,16 @@ param(
 
 $ErrorActionPreference = "SilentlyContinue"
 
+function Get-MetadataValue {
+    param(
+        [hashtable]$Data,
+        [string]$Key,
+        $Default
+    )
+    if ($Data -and $Data.ContainsKey($Key) -and $null -ne $Data[$Key]) { return $Data[$Key] }
+    return $Default
+}
+
 if (-not $SessionId) {
     $SessionId = "session-$((Get-Date).ToString('yyyyMMddHHmmss'))"
 }
@@ -55,11 +65,11 @@ $memoryData.conversation_log += $eventEntry
 
 switch ($EventType) {
     "question_asked" {
-        $questionText = $Metadata["question"] ?? ""
+        $questionText = Get-MetadataValue -Data $Metadata -Key "question" -Default ""
         if ($questionText) {
             $existing = $memoryData.pattern_recognition.repeated_questions | Where-Object { $_.text -eq $questionText }
             if ($existing) {
-                existing.count++
+                $existing.count++
                 $existing.lastAsked = $timestamp
             } else {
                 $memoryData.pattern_recognition.repeated_questions += @{
@@ -67,7 +77,7 @@ switch ($EventType) {
                     count = 1
                     firstAsked = $timestamp
                     lastAsked = $timestamp
-                    context = $Metadata["context"] ?? ""
+                    context = Get-MetadataValue -Data $Metadata -Key "context" -Default ""
                 }
             }
             
@@ -83,14 +93,14 @@ switch ($EventType) {
     }
     
     "recommendation_given" {
-        $recType = $Metadata["recommendation_type"] ?? "general"
-        $recTarget = $Metadata["target"] ?? ""
+        $recType = Get-MetadataValue -Data $Metadata -Key "recommendation_type" -Default "general"
+        $recTarget = Get-MetadataValue -Data $Metadata -Key "target" -Default ""
         
         $solution = @{
             type = $recType
             target = $recTarget
             timestamp = $timestamp
-            context = $Metadata["context"] ?? ""
+            context = Get-MetadataValue -Data $Metadata -Key "context" -Default ""
             status = "pending_feedback"
         }
         
@@ -98,8 +108,8 @@ switch ($EventType) {
     }
     
     "user_feedback" {
-        $feedbackValue = $Metadata["feedback"] ?? ""
-        $targetRec = $Metadata["target_recommendation"] ?? ""
+        $feedbackValue = Get-MetadataValue -Data $Metadata -Key "feedback" -Default ""
+        $targetRec = Get-MetadataValue -Data $Metadata -Key "target_recommendation" -Default ""
         
         if ($memoryData.pattern_recognition.successful_solutions.Count -gt 0) {
             $lastSolution = $memoryData.pattern_recognition.successful_solutions[-1]
@@ -112,7 +122,7 @@ switch ($EventType) {
         
         if ($feedbackValue -match "reject|拒绝|不要|跳过|忽略|不喜欢") {
             $memoryData.pattern_recognition.avoided_topics += @{
-                topic = $Metadata["topic"] ?? $targetRec
+                topic = Get-MetadataValue -Data $Metadata -Key "topic" -Default $targetRec
                 reason = $feedbackValue
                 timestamp = $timestamp
             }
@@ -120,8 +130,8 @@ switch ($EventType) {
     }
     
     "cleanup_complete" {
-        $spaceFreed = $Metadata["space_freed_mb"] ?? 0
-        $actionsTaken = $Metadata["actions"] ?? @()
+        $spaceFreed = Get-MetadataValue -Data $Metadata -Key "space_freed_mb" -Default 0
+        $actionsTaken = Get-MetadataValue -Data $Metadata -Key "actions" -Default @()
         
         if ([int]$spaceFreed -gt 0) {
             $summary = @{
@@ -216,7 +226,7 @@ function AddLearningPoint {
             last_used = $timestamp
             effectiveness_history = @($Effectiveness)
             success_rate = if ($Effectiveness -in @("good","excellent")) { 100 } else { 0 }
-            user_type_context = $profile.user_type.primary ?? "unknown"
+            user_type_context = if ($profile -and $profile.user_type -and $profile.user_type.primary) { $profile.user_type.primary } else { "unknown" }
         }
     }
 }

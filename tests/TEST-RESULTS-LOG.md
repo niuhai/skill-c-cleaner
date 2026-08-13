@@ -279,3 +279,92 @@
 ---
 
 *最后更新: 2026-05-18（含 v6.3 清理引擎深度优化）*
+
+---
+
+## 测试批次 9：v6.2 迭代闭环与增长追踪（2026-08-10）
+
+### 用户问题复盘
+
+用户反馈清理后 C 盘仍有约 32.5 GB 可用，但体验不佳，且不知道空间持续增长的来源。复盘确认：旧流程只报告“可清理候选”，没有保存路径级基线，也没有验证实际释放量；全量扫描还可能在 F 类大文件扫描阶段超时。
+
+### 本轮实际结果
+
+| 验证项 | 结果 |
+|---|---|
+| 当前 C 盘 | 148.91 GB 总计 / 116.4 GB 已用 / 32.5 GB 可用 |
+| Qoder 可安全清理 | 3.32 GB，当前仍存在，说明之前未真正执行或已重新生成 |
+| Codex 当前 runtime | 1.78 GB，纳入持续增长追踪，保留当前运行时 |
+| Codex 旧残留与 Whisper | 约 1.20 GB，均标记为谨慎项 |
+| 快速证据集 | 14 类，约 84 秒，能完整收口 |
+| 传统大文件扫描 | 约 122 秒，仍保留为显式慢速扫描 |
+| 增长追踪 | 成功生成首个基线，并可比较 AppData、Temp、ProgramData 等路径 |
+| PowerShell 语法 | 全部通过 |
+| Skill 元数据验证 | 通过 |
+
+### 新增能力
+
+- `track-growth.ps1`：保存路径级快照、增量和增长速度；短时间间隔不再伪装成可靠的“每天增长量”。
+- `iteration-loop.ps1`：实现 discover → baseline → plan → dispatch → verify → settle → review → next 八步闭环。
+- 四件套参考机制：`iteration-loop`、`project-pilot`、`concurrent-dispatcher`、`code-review-checklist`。
+- `-Fast` 快速分析模式：默认跳过最慢的 F 类和安全软件扫描；大文件扫描改为按需执行。
+- 修复旧版 BOM、PowerShell 5.1 `??`、数组/哈希语法和 Electron 报告名称显示问题。
+
+### 当前结论
+
+本轮没有删除任何文件。下一次必须使用同一份增长快照做清理后验证，报告“实际释放量”和“重新生成量”，不能再把“预计可释放”当成“已经释放”。
+
+---
+
+## 测试批次 10：U/MX 软件与零碎空间盘点（2026-08-12）
+
+| 验证项 | 结果 |
+|---|---|
+| U 类扫描 | 新增卸载注册表只读盘点；按 180 天/200 MB 规则输出候选，不自动卸载 |
+| U 类边界 | 排除常见系统组件、运行库、更新和补丁；明确标注最后使用时间不可可靠推断 |
+| MX 类扫描 | 新增 C:\ 一级目录、根文件、用户目录一级散落文件和权限盲区信息 |
+| 清理额度隔离 | MX 进入 `inventory`，不计入安全/谨慎/禁止清理合计 |
+| JSON 输出 | 增加 `findings` 与 `inventory` 两个分离字段 |
+| PowerShell 兼容性 | 全量语法、真实 U/MX 扫描和 Skill 校验通过 |
+
+---
+
+## 测试批次 11：v6.4 实际占用与增长归因（2026-08-12）
+
+| 验证项 | 结果 |
+|---|---|
+| 旧基线可信度 | schema 1 与新测量算法不兼容，已主动废弃并建立 schema 2 基线 |
+| 层级去重 | `coverage` 与 `detail` 分离；AppData/Temp 等父子目录不再重复加入总量 |
+| 增量对账 | 两次短时复测分别为实际 +4/+14 MB、覆盖根 +77/+84 MB，均标记 `consistent-partial` |
+| NTFS 实际占用 | WPS 云缓存 18.376 GB；Qoder 0.656 GB；用户 Temp 约 1.655 GB（部分读取） |
+| 应用级追踪 | 覆盖 Trae、TRAE SOLO、LarkShell、WPS、Temp、Playwright、剪映、OpenAI、updater 等 |
+| Windows 更新 | `$WinREAgent` 1.799 GB、更新下载约 913 MB，检测到待重启信号，保持只读 |
+| 再生追踪 | cleanup session 的即时检查通过；后续以清理后即时状态为再生零点 |
+| PowerShell / JSON / Skill | 全部通过 |
+
+本轮只升级和只读验证，没有删除用户或系统文件。
+
+## Test batch 12: v6.4.1 large-file scanner performance (2026-08-12)
+
+- PowerShell syntax parse: PASS.
+- In-process .NET scanner: PASS.
+- `scan-large-files.ps1 -TopN 5`: PASS after fixing exception ordering; valid root and user data results.
+- `scan-large-files.ps1 -TopN 20`: PASS; 504,251 files enumerated in 97.3 seconds; 6 directories skipped and reported.
+- Safety check: PASS; scan was read-only and created no destination files.
+
+## 测试批次 13：v6.5.0 原生分片与同遍增长聚合（2026-08-13）
+
+| 验证项 | 结果 |
+|---|---|
+| PowerShell 语法 / C# 编译 | 相关脚本全部 PASS；`NativeFileScanner.cs` 动态编译 PASS |
+| F 类全盘覆盖 | 579,955 文件、117,694 目录、140 个不可访问目录；422 个分片；重解析目标不跟随 |
+| F 类耗时 | 冷/热缓存实测 14.9–36.2 秒；旧 v6.4.1 为 97.3 秒，旧 PowerShell 方案超过 5 分钟无结果 |
+| F→GR 复用 | F 同遍聚合 37 个增长目标；GR 0.5 秒；组合 16.0 秒 |
+| Fast 模式 | 153.6 秒降至 26.6 秒；GR 快照读取 0.2 秒并明确显示快照年龄和来源 |
+| J 类 runtime | 21.4 秒降至 11.5–14.4 秒；Microsoft 容器拆为 Edge/EdgeCore/EdgeWebView；全部 inventory-only |
+| 应用清理口径 | Trae CN、TRAE SOLO、Qoder、Lark 等只统计精确缓存子路径，不再把软件整个目录计为可清理 |
+| 汇总去重 | exact path + 父子层级去重；Search index 和应用 footprint 不进入释放额度 |
+| 新增长基线 | `native-f-v1`，37 个目标；旧 robocopy 基线不跨来源比较 |
+| 安全边界 | 所有基准均只读；未删除、移动或修改用户/系统源数据 |
+
+已生成并验证 JSON 报告，包含 `telemetry`、`scanner_metadata`、`deduplicated_findings` 和测量缓存统计。

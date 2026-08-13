@@ -2,13 +2,27 @@
 # Scan-only, discovers development directories and index burdens dynamically
 # Generates exclusion list based on actual project structure found on system
 
-# 复用 _common.ps1 的 Get-SkillRoot 和 Get-FolderSizeFast（robocopy 方案，比 Get-ChildItem 快 10-100 倍）
-# Get-FolderSizeMB 作为本地包装函数，调用 Get-FolderSizeFast 并转换为 MB
+# Self-contained helper functions (avoids encoding issues in _common.ps1)
+function Get-SkillRoot {
+    if ($PSCommandPath) {
+        $dir = Split-Path -Parent $PSCommandPath
+        if (Test-Path (Join-Path $dir "_common.ps1")) { return $dir }
+        $parent = Split-Path -Parent $dir
+        if (Test-Path (Join-Path $parent "_common.ps1")) { return $parent }
+    }
+    return "C:\.trae\skills\c-drive-cleaner"
+}
+
 function Get-FolderSizeMB {
     param([string]$Path)
-    $r = Get-FolderSizeFast $Path
-    if (-not $r.Found -or $r.Size -eq 0) { return 0 }
-    return [math]::Round($r.Size / 1MB, 2)
+    if (-not (Test-Path $Path -ErrorAction SilentlyContinue)) { return 0 }
+    try {
+        if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) {
+            . (Join-Path (Get-SkillRoot) "_common.ps1")
+        }
+        $measurement = Get-FolderSizeFast $Path
+        return [math]::Round([int64]$measurement.Size / 1MB, 2)
+    } catch { return 0 }
 }
 
 $SkillRoot = Get-SkillRoot
@@ -33,12 +47,13 @@ Write-Host "Dynamically discovering development directories and index burdens...
 Write-Host ""
 
 # 1. Scan common development root directories (prioritize user's actual paths)
+$userName = $env:USERNAME
 $devRoots = @(
-    "$env:USERPROFILE\source\repos",
-    "$env:USERPROFILE\source",
-    "$env:USERPROFILE\Documents\GitHub",
-    "$env:USERPROFILE\Documents\Projects",
-    "$env:USERPROFILE\Desktop\Projects",
+    "C:\Users\$userName\source\repos",
+    "C:\Users\$userName\source",
+    "C:\Users\$userName\Documents\GitHub",
+    "C:\Users\$userName\Documents\Projects",
+    "C:\Users\$userName\Desktop\Projects",
     "D:\GitHub",
     "D:\Projects",
     "D:\Code",
@@ -47,25 +62,40 @@ $devRoots = @(
     "D:\work",
     "D:\Workspace",
     "D:\src",
-    "$env:USERPROFILE\Desktop\Projects"
+    "C:\Users\$env:USERNAME\source",
+    "C:\Users\$env:USERNAME\Documents\GitHub",
+    "C:\Users\$env:USERNAME\Documents\Projects",
+    "C:\Users\$env:USERNAME\Desktop\Projects"
 )
 
-$foundProjects = @()
-$foundRoots = @()
+$resolvedRoots = @($devRoots | Where-Object { Test-Path -LiteralPath $_ -PathType Container -ErrorAction SilentlyContinue } |
+    ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') } | Select-Object -Unique | Sort-Object { $_.Length } -Descending)
+$foundRoots = [System.Collections.ArrayList]::new()
+foreach ($root in $resolvedRoots) {
+    $coveredByDeeperRoot = $false
+    foreach ($selected in @($foundRoots)) {
+        if ($selected.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            $coveredByDeeperRoot = $true
+            break
+        }
+    }
+    if (-not $coveredByDeeperRoot) { [void]$foundRoots.Add($root) }
+}
 
-foreach ($root in $devRoots) {
-    if (-not (Test-Path $root)) { continue }
-    $foundRoots += $root
-    
+$foundProjects = [System.Collections.ArrayList]::new()
+$seenProjects = @{}
+foreach ($root in @($foundRoots)) {
     $projects = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -notmatch '^(\.|desktop\.ini)' }
-    
     foreach ($proj in $projects) {
-        $foundProjects += [PSCustomObject]@{
+        $projectKey = $proj.FullName.ToLowerInvariant()
+        if ($seenProjects.ContainsKey($projectKey)) { continue }
+        $seenProjects[$projectKey] = $true
+        [void]$foundProjects.Add([PSCustomObject]@{
             ProjectPath = $proj.FullName
             ProjectName = $proj.Name
             RootDir = $root
-        }
+        })
     }
 }
 
@@ -134,13 +164,30 @@ $langMap = @{
     ".git" = "Git"
 }
 
+$patternByLeaf = @{}
+foreach ($pattern in $patternsToScan) {
+    if ($pattern.Pattern -notmatch '[\\/]') { $patternByLeaf[$pattern.Pattern.ToLowerInvariant()] = $pattern }
+}
+
 foreach ($proj in $foundProjects) {
     $projPath = $proj.ProjectPath
-    
-    foreach ($pattern in $patternsToScan) {
-        $matches = Get-ChildItem -Path $projPath -Filter $pattern.Pattern -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue
-        
-        foreach ($match in $matches) {
+    $candidateMatches = @(Get-ChildItem -Path $projPath -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+        Where-Object { $patternByLeaf.ContainsKey($_.Name.ToLowerInvariant()) } |
+        Sort-Object { $_.FullName.Length })
+    $selectedMatches = [System.Collections.ArrayList]::new()
+    foreach ($match in $candidateMatches) {
+        $covered = $false
+        foreach ($parentMatch in @($selectedMatches)) {
+            if ($match.FullName.StartsWith($parentMatch.FullName.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                $covered = $true
+                break
+            }
+        }
+        if (-not $covered) { [void]$selectedMatches.Add($match) }
+    }
+
+    foreach ($match in @($selectedMatches)) {
+            $pattern = $patternByLeaf[$match.Name.ToLowerInvariant()]
             $sizeMB = Get-FolderSizeMB -Path $match.FullName
             
             if ($sizeMB -gt 1.0) {
@@ -166,7 +213,6 @@ foreach ($proj in $foundProjects) {
                     $languageSummary[$lang].total_mb += $sizeMB
                 }
             }
-        }
     }
 }
 
@@ -247,15 +293,17 @@ if ($indexBurdens.Count -eq 0) {
         Write-Host ("  [{0,2}] {1,-15} {2,8} GB  ({3})" -f $rank, $dirName, $gb, $item.Project) -ForegroundColor DarkGray
     }
     
-    # Add to scan results
-    $reportItem = [PSCustomObject]@{
+    # Index burden is an indexing/CPU clue, not reclaimable disk capacity.
+    [void]$Global:CDriveInventory.Add(@{
         Category = "SI"
-        Item = "Search index burden"
+        Name = "Search index burden"
         SizeMB = [math]::Round($totalWastedMB, 2)
-        Risk = "safe"
-        Detail = "$($indexBurdens.Count) dirs, $totalWastedGB GB total - Exclude from Windows Search indexing"
-    }
-    [void]$Global:CDriveScanResults.Add($reportItem)
+        SizeBytes = [int64]($totalWastedMB * 1MB)
+        Path = (@($foundRoots) -join '; ')
+        Kind = "search-index-burden"
+        Evidence = "$($indexBurdens.Count) non-overlapping directories; exclusion may reduce indexing work but does not free this disk space"
+        Access = "ok"
+    })
     
     # Generate dynamic exclusion lists
     Write-Host ""
@@ -341,7 +389,7 @@ if ($indexBurdens.Count -eq 0) {
     Write-Host "System Cache   : $($systemExclusions.Count) entries (package manager caches)" -ForegroundColor White
     Write-Host "IDE Cache      : $($ideExclusions.Count) entries (TRAE/Code caches)" -ForegroundColor White
     Write-Host "TOTAL          : $totalExclusions entries" -ForegroundColor Green
-    Write-Host "Estimated freed CPU: ~$($indexBurdens.Count * 10) seconds per indexing cycle" -ForegroundColor Yellow
+    Write-Host "CPU savings: not estimated without before/after indexer telemetry" -ForegroundColor Yellow
     
     # Save to JSON
     $searchIndexData = @{

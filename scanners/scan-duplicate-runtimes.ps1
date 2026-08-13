@@ -1,126 +1,111 @@
-﻿# scan-duplicate-runtimes.ps1 - J类：重复运行时检测(增强版)
-# 只读扫描 — 自动发现Electron/CEF应用，识别具体应用名称和运行时占比
+# scan-duplicate-runtimes.ps1 - J class: Electron/CEF runtime inventory
+# Read-only. Application footprints and runtime-shaped bytes are inventory only.
 
-if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) { . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1") }
+if (-not (Get-Command "Initialize-NativeFileScanner" -ErrorAction SilentlyContinue)) {
+    . (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) "_common.ps1")
+}
 
-Write-Host "===== J类：重复运行时(Electron/CEF)检测 =====" -ForegroundColor Cyan
+Write-Host "===== J: Electron/CEF runtime inventory =====" -ForegroundColor Cyan
+Write-Host "Single-pass native scan; application footprints are not counted as cleanup capacity." -ForegroundColor DarkGray
+
+try {
+    Initialize-NativeFileScanner
+} catch {
+    Write-Host "  Native scanner unavailable: $($_.Exception.Message)" -ForegroundColor Red
+    return
+}
 
 $scanRoots = @(
-    @{ Path = "$env:LOCALAPPDATA"; Label = "LocalAppData" },
-    @{ Path = "$env:APPDATA"; Label = "AppData\Roaming" },
-    @{ Path = "${env:ProgramFiles(x86)}"; Label = "Program Files (x86)" },
-    @{ Path = "$env:ProgramFiles"; Label = "Program Files" }
+    $env:LOCALAPPDATA,
+    $env:APPDATA,
+    ${env:ProgramFiles(x86)},
+    $env:ProgramFiles
+) | Where-Object {
+    $_ -and (Test-Path -LiteralPath $_ -PathType Container -ErrorAction SilentlyContinue)
+} | Select-Object -Unique
+
+$exclusions = @(
+    "C:\Program Files\WindowsApps",
+    "C:\Program Files (x86)\WindowsApps"
+)
+$expandContainers = @(
+    "Microsoft",
+    "Google",
+    "Tencent"
 )
 
-$electronApps = [System.Collections.ArrayList]::new()
-$cefIndicators = @("libcef.dll", "chrome_elf.dll", "v8_context_snapshot.bin")
-$pakPattern = "*.pak"
+$scan = [CleanSight.NativeFileScanner]::ScanRuntimeApps(
+    [string[]]$scanRoots,
+    [string[]]$exclusions,
+    [string[]]$expandContainers,
+    4
+)
+$apps = @($scan.Apps | Sort-Object TotalBytes -Descending)
 
 function Get-AppIdentity {
-    param([string]$DirPath)
-    $pkgJson = Join-Path $DirPath "package.json"
-    if (Test-Path $pkgJson) {
+    param([object]$App)
+    $packageJson = Join-Path $App.Path "package.json"
+    if (Test-Path -LiteralPath $packageJson -PathType Leaf -ErrorAction SilentlyContinue) {
         try {
-            $pkg = Get-Content $pkgJson -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($pkg.productName) { return $pkg.productName }
-            if ($pkg.name) { return $pkg.name }
-        } catch {}
+            $package = Get-Content -LiteralPath $packageJson -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($package.productName) { return [string]$package.productName }
+            if ($package.name) { return [string]$package.name }
+        } catch { }
     }
-    $exes = Get-ChildItem $DirPath -Recurse -Filter "*.exe" -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch '^(uninstall|setup|update|crash_reporter)' } |
-        Select-Object -First 3
-    if ($exes) {
-        $exeNames = ($exes | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) }) -join ", "
-        return $exeNames
+    if ($App.ExecutableNames -and @($App.ExecutableNames).Count -gt 0) {
+        return (@($App.ExecutableNames) -join ", ")
     }
     return ""
 }
 
-function Measure-RuntimeSize {
-    param([string]$DirPath)
-    $runtimePatterns = @(
-        "libcef.dll", "chrome_elf.dll", "v8_context_snapshot.bin",
-        "*.pak", "d3dcompiler_*.dll", "vk_swiftshader*.dll",
-        "libEGL.dll", "libGLESv2.dll", "swiftshader"
-    )
-    $runtimeSize = 0L
-    $dataSize = 0L
-
-    foreach ($pattern in $runtimePatterns) {
-        $files = Get-ChildItem $DirPath -Recurse -Filter $pattern -File -ErrorAction SilentlyContinue
-        foreach ($f in @($files)) {
-            $runtimeSize += $f.Length
-        }
-    }
-
-    $allFiles = Get-ChildItem $DirPath -Recurse -File -ErrorAction SilentlyContinue
-    foreach ($f in @($allFiles)) {
-        $dataSize += $f.Length
-    }
-    $nonRuntime = $dataSize - $runtimeSize
-
-    return @{ RuntimeMB = [math]::Round($runtimeSize / 1MB, 1); DataMB = [math]::Round($nonRuntime / 1MB, 1); TotalMB = [math]::Round($dataSize / 1MB, 1) }
-}
-
-foreach ($root in $scanRoots) {
-    if (-not (Test-Path $root.Path)) { continue }
-    $dirs = Get-ChildItem $root.Path -Directory -ErrorAction SilentlyContinue
-    foreach ($dir in $dirs) {
-        $hasCef = $false
-        foreach ($indicator in $cefIndicators) {
-            if (Get-ChildItem $dir.FullName -Recurse -Filter $indicator -File -ErrorAction SilentlyContinue |
-                Select-Object -First 1) {
-                $hasCef = $true
-                break
-            }
-        }
-        if (-not $hasCef) { continue }
-        $pakFiles = Get-ChildItem $dir.FullName -Recurse -Filter $pakPattern -File -ErrorAction SilentlyContinue
-        if ($pakFiles.Count -ge 3) {
-            $r = Get-FolderSizeFast $dir.FullName
-            $identity = Get-AppIdentity -DirPath $dir.FullName
-            $sizes = Measure-RuntimeSize -DirPath $dir.FullName
-            $parentDir = if ($dir.Parent) { $dir.Parent.Name } else { "" }
-            [void]$electronApps.Add([PSCustomObject]@{
-                DirName   = $dir.Name
-                Identity  = $identity
-                Parent    = $parentDir
-                RootLabel = $root.Label
-                Path      = $dir.FullName
-                Size      = $r.Size
-                PakCount  = $pakFiles.Count
-                RuntimeMB = $sizes.RuntimeMB
-                DataMB    = $sizes.DataMB
-                TotalMB   = $sizes.TotalMB
-            })
-        }
-    }
-}
-
-if ($electronApps.Count -eq 0) {
-    Write-Host "  ○ 未发现Electron/CEF应用" -ForegroundColor DarkGray
+if ($apps.Count -eq 0) {
+    Write-Host "  No Electron/CEF application roots detected." -ForegroundColor DarkGray
 } else {
-    $totalSize = ($electronApps | Measure-Object Size -Sum).Sum
-    $totalGB = [math]::Round($totalSize / 1GB, 2)
-    $totalRuntimeMB = ($electronApps | Measure-Object RuntimeMB -Sum).Sum
-    $totalDataMB = ($electronApps | Measure-Object DataMB -Sum).Sum
-
-    Write-Host "  发现 $($electronApps.Count) 个Electron/CEF应用，总占用 $totalGB GB" -ForegroundColor Yellow
-    Write-Host "  运行时总计 ~$([math]::Round($totalRuntimeMB/1024,1)) GB | 数据总计 ~$([math]::Round($totalDataMB/1024,1)) GB" -ForegroundColor Yellow
+    $totalBytes = [int64](($apps | Measure-Object TotalBytes -Sum).Sum)
+    $runtimeBytes = [int64](($apps | Measure-Object RuntimeBytes -Sum).Sum)
+    Write-Host ("  Detected {0} application roots; footprint {1:N2} GB; runtime-shaped files {2:N2} GB." -f $apps.Count, ($totalBytes / 1GB), ($runtimeBytes / 1GB)) -ForegroundColor Yellow
+    Write-Host "  Runtime-shaped bytes are not automatically reclaimable; uninstalling an unused app is the supported action." -ForegroundColor DarkGray
     Write-Host ""
 
-    $sorted = $electronApps | Sort-Object Size -Descending
-    foreach ($app in $sorted) {
-        $sizeStr = if ($app.Size -ge 1GB) { "$([math]::Round($app.Size/1GB,2)) GB" } else { "$([math]::Round($app.Size/1MB,1)) MB" }
-        $displayName = if ($app.Identity) { "$app.DirName ($app.Identity)" } else { $app.DirName }
-        $location = "$($app.RootLabel)\$($app.Parent)\$($app.DirName)"
-        $runtimePct = if ($app.TotalMB -gt 0) { [math]::Round($app.RuntimeMB / $app.TotalMB * 100, 0) } else { 0 }
+    foreach ($app in $apps) {
+        $identity = Get-AppIdentity -App $app
+        $displayName = if ($identity) { "$($app.DirectoryName) ($identity)" } else { $app.DirectoryName }
+        $runtimePercent = if ($app.TotalBytes -gt 0) {
+            [math]::Round($app.RuntimeBytes / $app.TotalBytes * 100, 0)
+        } else { 0 }
+        $sizeText = if ($app.TotalBytes -ge 1GB) {
+            "$([math]::Round($app.TotalBytes/1GB,2)) GB"
+        } else {
+            "$([math]::Round($app.TotalBytes/1MB,1)) MB"
+        }
+        Write-Host "  ${displayName}: $sizeText" -ForegroundColor DarkCyan
+        Write-Host "     Path: $($app.Path)" -ForegroundColor DarkGray
+        Write-Host "     Evidence: runtime-shaped ${runtimePercent}% ($([math]::Round($app.RuntimeBytes/1MB,1)) MB); $($app.PakCount) .pak files" -ForegroundColor DarkGray
 
-        Write-ScanResult -Category "J" -Name "$displayName (Electron)" -Size $app.Size `
-            -Risk "cautious" -Path $app.Path `
-            -Advice "Chromium运行时占 ${runtimePct}% ($($app.RuntimeMB)MB/$($app.TotalMB)MB)。如非必须可用网页版替代" `
-            -Note "位置: $location | 运行时: $($app.RuntimeMB)MB | 数据: $($app.DataMB)MB | $($app.PakCount)个.pak"
+        [void]$Global:CDriveInventory.Add(@{
+            Category = "J"
+            Name = "$displayName (Electron/CEF)"
+            SizeMB = [math]::Round([int64]$app.TotalBytes / 1MB, 2)
+            SizeBytes = [int64]$app.TotalBytes
+            Path = $app.Path
+            Kind = "installed-electron-app"
+            Evidence = "runtime-shaped ${runtimePercent}%; $($app.PakCount) .pak files; use supported uninstall only after confirming the app is unused"
+            Access = if ($app.SkippedDirectories -gt 0) { "partial" } else { "ok" }
+        })
     }
 }
 
+if ($null -eq $Global:CDriveScannerMetadata) { $Global:CDriveScannerMetadata = @{} }
+$Global:CDriveScannerMetadata["J"] = @{
+    engine = "Win32 FindFirstFileExW"
+    elapsed_seconds = [math]::Round($scan.ElapsedSeconds, 3)
+    candidates = [int64]$scan.CandidateDirectories
+    files = [int64]$scan.EnumeratedFiles
+    skipped_directories = [int64]$scan.SkippedDirectories
+    findings = $apps.Count
+    expanded_containers = @($expandContainers)
+    accounting = "inventory-only"
+}
+
+Write-Host ("  Runtime scan completed in {0:N1}s across {1:N0} files." -f $scan.ElapsedSeconds, $scan.EnumeratedFiles) -ForegroundColor DarkGray
 Write-Host ""

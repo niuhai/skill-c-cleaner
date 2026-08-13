@@ -1,0 +1,48 @@
+{
+  "schema": 2,
+  "measurementVersion": 2,
+  "retentionDays": 90,
+  "targets": [
+    { "id": "windows", "name": "Windows", "path": "C:\\Windows", "kind": "system", "role": "coverage" },
+    { "id": "program-data", "name": "ProgramData", "path": "C:\\ProgramData", "kind": "system-data", "role": "coverage" },
+    { "id": "program-files", "name": "Program Files", "path": "C:\\Program Files", "kind": "installed-apps", "role": "coverage" },
+    { "id": "program-files-x86", "name": "Program Files (x86)", "path": "C:\\Program Files (x86)", "kind": "installed-apps", "role": "coverage" },
+    { "id": "users", "name": "Users", "path": "C:\\Users", "kind": "user-data", "role": "coverage" },
+    { "id": "winre-agent", "name": "$WinREAgent", "path": "C:\\$WinREAgent", "kind": "windows-update", "role": "coverage" },
+    { "id": "pagefile", "name": "pagefile.sys", "path": "C:\\pagefile.sys", "kind": "system-file", "role": "coverage" },
+    { "id": "swapfile", "name": "swapfile.sys", "path": "C:\\swapfile.sys", "kind": "system-file", "role": "coverage" },
+    { "id": "hiberfil", "name": "hiberfil.sys", "path": "C:\\hiberfil.sys", "kind": "system-file", "role": "coverage" },
+
+    { "id": "windows-temp", "name": "Windows Temp", "path": "C:\\Windows\\Temp", "kind": "temp", "role": "detail", "parentId": "windows" },
+    { "id": "windows-update-download", "name": "Windows Update downloads", "path": "C:\\Windows\\SoftwareDistribution\\Download", "kind": "windows-update", "role": "detail", "parentId": "windows" },
+    { "id": "winsxs", "name": "WinSxS", "path": "C:\\Windows\\WinSxS", "kind": "system-component-store", "role": "detail", "parentId": "windows" },
+    { "id": "delivery-optimization", "name": "Delivery Optimization cache", "path": "C:\\ProgramData\\Microsoft\\Windows\\DeliveryOptimization\\Cache", "kind": "windows-update", "role": "detail", "parentId": "program-data" },
+    { "id": "package-cache", "name": "Installer package cache", "path": "C:\\ProgramData\\Package Cache", "kind": "installer-cache", "role": "detail", "parentId": "program-data" },
+
+    { "id": "local-appdata", "name": "User Local AppData", "path": "%LOCALAPPDATA%", "kind": "app-data", "role": "detail", "parentId": "users" },
+    { "id": "roaming-appdata", "name": "User Roaming AppData", "path": "%APPDATA%", "kind": "app-data", "role": "detail", "parentId": "users" },
+    { "id": "wps-cloud-cache", "name": "WPS cloud local cache", "path": "%USERPROFILE%\\WPS Cloud Files\\.*\\cachedata", "kind": "cloud-offline-cache", "role": "detail", "parentId": "users" },
+    { "id": "user-cache", "name": "User cache", "path": "%USERPROFILE%\\.cache", "kind": "cache", "role": "detail", "parentId": "users" },
+    { "id": "codex-runtime", "name": "Codex runtimes", "path": "%USERPROFILE%\\.cache\\codex-runtimes", "kind": "agent-cache", "role": "detail", "parentId": "user-cache" },
+    { "id": "codex-data", "name": "Codex data", "path": "%USERPROFILE%\\.codex", "kind": "agent-data", "role": "detail", "parentId": "users" },
+    { "id": "workbuddy-data", "name": "WorkBuddy data", "path": "%USERPROFILE%\\.workbuddy", "kind": "agent-data", "role": "detail", "parentId": "users" },
+
+    { "id": "trae-cn", "name": "Trae CN", "path": "%APPDATA%\\Trae CN", "kind": "app-data", "role": "detail", "parentId": "roaming-appdata" },
+    { "id": "trae-solo", "name": "TRAE SOLO CN", "path": "%APPDATA%\\TRAE SOLO CN", "kind": "app-data", "role": "detail", "parentId": "roaming-appdata" },
+    { "id": "lark-shell", "name": "LarkShell", "path": "%APPDATA%\\LarkShell", "kind": "app-data", "role": "detail", "parentId": "roaming-appdata" },
+    { "id": "kingsoft", "name": "Kingsoft/WPS roaming data", "path": "%APPDATA%\\kingsoft", "kind": "app-data", "role": "detail", "parentId": "roaming-appdata" },
+    { "id": "qoder", "name": "Qoder", "path": "%APPDATA%\\Qoder", "kind": "app-cache", "role": "detail", "parentId": "roaming-appdata" },
+    { "id": "jetbrains-roaming", "name": "JetBrains roaming", "path": "%APPDATA%\\JetBrains", "kind": "app-data", "role": "detail", "parentId": "roaming-appdata" },
+
+    { "id": "user-temp", "name": "User Temp", "path": "%LOCALAPPDATA%\\Temp", "kind": "temp", "role": "detail", "parentId": "local-appdata" },
+    { "id": "workbuddy-update", "name": "WorkBuddy updater residue", "path": "%LOCALAPPDATA%\\Temp\\workbuddy-update-*", "kind": "app-updater", "role": "detail", "parentId": "user-temp" },
+    { "id": "local-microsoft", "name": "Local Microsoft data", "path": "%LOCALAPPDATA%\\Microsoft", "kind": "app-data", "role": "detail", "parentId": "local-appdata" },
+    { "id": "jetbrains-local", "name": "JetBrains local", "path": "%LOCALAPPDATA%\\JetBrains", "kind": "app-data", "role": "detail", "parentId": "local-appdata" },
+    { "id": "playwright", "name": "Playwright browsers", "path": "%LOCALAPPDATA%\\ms-playwright", "kind": "dev-runtime", "role": "detail", "parentId": "local-appdata" },
+    { "id": "jianying", "name": "Jianying local data", "path": "%LOCALAPPDATA%\\JianyingPro", "kind": "app-data", "role": "detail", "parentId": "local-appdata" },
+    { "id": "local-packages", "name": "Store app packages", "path": "%LOCALAPPDATA%\\Packages", "kind": "app-data", "role": "detail", "parentId": "local-appdata" },
+    { "id": "openai-local", "name": "OpenAI local data", "path": "%LOCALAPPDATA%\\OpenAI", "kind": "app-data", "role": "detail", "parentId": "local-appdata" },
+    { "id": "qoder-updater", "name": "Qoder updater", "path": "%LOCALAPPDATA%\\qoder-work-updater", "kind": "app-updater", "role": "detail", "parentId": "local-appdata" },
+    { "id": "workbuddy-updater", "name": "WorkBuddy updater", "path": "%LOCALAPPDATA%\\@genieworkbuddy-desktop-updater", "kind": "app-updater", "role": "detail", "parentId": "local-appdata" }
+  ]
+}

@@ -1,16 +1,29 @@
 ﻿param(
     [string]$Categories = "all",
     [string]$OutputFormat = "console",
-    [string]$Template = "v6-ai-decision"
+    [string]$Template = "v6-ai-decision",
+    [switch]$Fast,
+    [switch]$RecordGrowth
 )
 
 $SkillRoot = Split-Path -Parent $PSCommandPath
-if (-not $SkillRoot) { $SkillRoot = $PSScriptRoot }
+if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
 . (Join-Path $SkillRoot "_common.ps1")
 
-$VERSION = "6.4.0"
+$VERSION = "6.5.0"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
+$Global:CDriveInventory = [System.Collections.ArrayList]::new()
+$Global:CDriveScannerMetadata = @{}
+$Global:CDriveScanTelemetry = [System.Collections.ArrayList]::new()
+$Global:CDriveMeasurementCache = @{}
+$Global:CDriveMeasurementCacheHits = 0
+$Global:CDriveMeasurementCacheMisses = 0
+$Global:CDriveMeasurementCacheEnabled = $true
+$Global:CDriveFastMode = [bool]$Fast
+$Global:CDriveNativePathTotals = @()
+$Global:CDriveNativePathTotalsMetadata = $null
+$Global:CDriveRecordGrowth = [bool]$RecordGrowth
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
@@ -50,9 +63,18 @@ $allCats = @(
     @{ Code = "VM"; Script = "scan-virtual-memory.ps1" }
     @{ Code = "SI"; Script = "scan-search-index.ps1" }
     @{ Code = "O"; Script = "scan-targeted-optimization.ps1" }
+    @{ Code = "GR"; Script = "scan-growth.ps1" }
+    @{ Code = "U"; Script = "scan-unused-software.ps1" }
+    @{ Code = "MX"; Script = "scan-misc-space.ps1" }
+    @{ Code = "WU"; Script = "scan-windows-update-residue.ps1" }
+    @{ Code = "SA"; Script = "scan-space-accounting.ps1" }
 )
 
-$selectedCats = if ($Categories -eq "all") { $allCats } else {
+$selectedCats = if ($Fast -and $Categories -eq "all") {
+    # Fast is the default evidence set for iteration-loop. F is opt-in because
+    # a full C:\ recursive scan can take several minutes or hit ACLs.
+    $allCats | Where-Object { $_.Code -notin @("F", "H", "MX", "SA") }
+} elseif ($Categories -eq "all") { $allCats } else {
     $codes = $Categories -split "," | ForEach-Object { $_.Trim().ToUpper() }
     $allCats | Where-Object { $_.Code -in $codes }
 }
@@ -66,7 +88,29 @@ foreach ($cat in $selectedCats) {
     $scriptPath = Join-Path $SkillRoot "scanners\$($cat.Script)"
     if (Test-Path $scriptPath) {
         Write-Host "[$catIdx/$totalCats] " -NoNewline -ForegroundColor DarkGray
-        . $scriptPath
+        $categoryWatch = [Diagnostics.Stopwatch]::StartNew()
+        $findingCountBefore = $Global:CDriveScanResults.Count
+        $inventoryCountBefore = $Global:CDriveInventory.Count
+        $categoryStatus = "completed"
+        $categoryError = ""
+        try {
+            . $scriptPath
+        } catch {
+            $categoryStatus = "failed"
+            $categoryError = $_.Exception.Message
+            Write-Host "  Scanner failed: $categoryError" -ForegroundColor Red
+        } finally {
+            $categoryWatch.Stop()
+            [void]$Global:CDriveScanTelemetry.Add([pscustomobject]@{
+                Category = $cat.Code
+                Script = $cat.Script
+                Seconds = [math]::Round($categoryWatch.Elapsed.TotalSeconds, 3)
+                FindingsAdded = $Global:CDriveScanResults.Count - $findingCountBefore
+                InventoryAdded = $Global:CDriveInventory.Count - $inventoryCountBefore
+                Status = $categoryStatus
+                Error = $categoryError
+            })
+        }
     } else {
         Write-Host "  WARN: scanner not found: $($cat.Script)" -ForegroundColor Red
     }
@@ -75,6 +119,81 @@ foreach ($cat in $selectedCats) {
 $stopwatch.Stop()
 $scanDuration = "$([math]::Round($stopwatch.Elapsed.TotalSeconds, 1))s"
 
+function Get-DeduplicatedFindingRows {
+    param([object[]]$Findings)
+    $severity = @{ safe=1; cautious=2; dangerous=3; forbidden=4 }
+    $sourcePriority = @{ Targeted=4; DB=2; '自定义'=2 }
+    $byKey = @{}
+
+    foreach ($finding in @($Findings)) {
+        $measurements = @($finding.Measurements)
+        if ($measurements.Count -eq 0 -and $finding.Path -and $finding.SizeMB -gt 0) {
+            $measurements = @([pscustomobject]@{ Path=$finding.Path; Bytes=[int64]([double]$finding.SizeMB * 1MB) })
+        }
+        foreach ($measurement in $measurements) {
+            $path = [string]$measurement.Path
+            $bytes = [int64]$measurement.Bytes
+            if (-not $path -or $bytes -le 0) { continue }
+            $normalized = ""
+            if ([IO.Path]::IsPathRooted($path)) {
+                try { $normalized = [IO.Path]::GetFullPath($path).TrimEnd('\') } catch { $normalized = $path.TrimEnd('\') }
+            } else {
+                $normalized = "virtual:$($finding.Category):$($finding.Name):$path"
+            }
+            $key = $normalized.ToLowerInvariant()
+            $row = [pscustomobject]@{
+                Path = $normalized
+                Bytes = $bytes
+                Risk = [string]$finding.Risk
+                Category = [string]$finding.Category
+                Name = [string]$finding.Name
+                Source = [string]$finding.Source
+                OverlapCount = 1
+            }
+            if (-not $byKey.ContainsKey($key)) {
+                $byKey[$key] = $row
+                continue
+            }
+            $current = $byKey[$key]
+            $current.OverlapCount++
+            if ($bytes -gt $current.Bytes) { $current.Bytes = $bytes }
+            $currentSeverity = if ($severity.ContainsKey($current.Risk)) { $severity[$current.Risk] } else { 2 }
+            $newSeverity = if ($severity.ContainsKey($row.Risk)) { $severity[$row.Risk] } else { 2 }
+            $currentSource = if ($sourcePriority.ContainsKey($current.Source)) { $sourcePriority[$current.Source] } else { 1 }
+            $newSource = if ($sourcePriority.ContainsKey($row.Source)) { $sourcePriority[$row.Source] } else { 1 }
+            if ($newSeverity -gt $currentSeverity -or ($newSeverity -eq $currentSeverity -and $newSource -gt $currentSource)) {
+                $current.Risk = $row.Risk
+                $current.Category = $row.Category
+                $current.Name = $row.Name
+                $current.Source = $row.Source
+            }
+        }
+    }
+
+    $accepted = [System.Collections.ArrayList]::new()
+    foreach ($row in @($byKey.Values | Sort-Object { $_.Path.Length })) {
+        $parent = $null
+        if (-not $row.Path.StartsWith('virtual:', [StringComparison]::OrdinalIgnoreCase)) {
+            foreach ($candidate in @($accepted)) {
+                if ($candidate.Path.StartsWith('virtual:', [StringComparison]::OrdinalIgnoreCase)) { continue }
+                if ($row.Path.StartsWith($candidate.Path.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                    $parent = $candidate
+                    break
+                }
+            }
+        }
+        if ($parent) {
+            $parent.OverlapCount += $row.OverlapCount
+            $parentSeverity = if ($severity.ContainsKey($parent.Risk)) { $severity[$parent.Risk] } else { 2 }
+            $childSeverity = if ($severity.ContainsKey($row.Risk)) { $severity[$row.Risk] } else { 2 }
+            if ($childSeverity -gt $parentSeverity) { $parent.Risk = $row.Risk }
+            continue
+        }
+        [void]$accepted.Add($row)
+    }
+    return @($accepted)
+}
+
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Scan Complete (took $scanDuration)" -ForegroundColor Cyan
@@ -82,15 +201,16 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 $results = $Global:CDriveScanResults
+$dedupedFindings = @(Get-DeduplicatedFindingRows -Findings @($results))
 $totalCleanable = 0; $totalCautious = 0; $totalForbidden = 0; $totalAll = 0
-if ($results -and $results.Count -gt 0) {
-    $safeItems = @($results | Where-Object { $_.Risk -eq "safe" })
-    $cautItems = @($results | Where-Object { $_.Risk -eq "cautious" })
-    $forbItems = @($results | Where-Object { $_.Risk -eq "forbidden" })
-    if ($safeItems.Count -gt 0) { $totalCleanable = [math]::Round(($safeItems | ForEach-Object { $_.SizeMB } | Measure-Object -Sum).Sum, 2) }
-    if ($cautItems.Count -gt 0) { $totalCautious = [math]::Round(($cautItems | ForEach-Object { $_.SizeMB } | Measure-Object -Sum).Sum, 2) }
-    if ($forbItems.Count -gt 0) { $totalForbidden = [math]::Round(($forbItems | ForEach-Object { $_.SizeMB } | Measure-Object -Sum).Sum, 2) }
-    $totalAll = [math]::Round(($results | ForEach-Object { $_.SizeMB } | Measure-Object -Sum).Sum, 2)
+if ($dedupedFindings.Count -gt 0) {
+    $safeItems = @($dedupedFindings | Where-Object { $_.Risk -eq "safe" })
+    $cautItems = @($dedupedFindings | Where-Object { $_.Risk -eq "cautious" -or $_.Risk -eq "dangerous" })
+    $forbItems = @($dedupedFindings | Where-Object { $_.Risk -eq "forbidden" })
+    if ($safeItems.Count -gt 0) { $totalCleanable = [math]::Round((($safeItems | Measure-Object Bytes -Sum).Sum / 1MB), 2) }
+    if ($cautItems.Count -gt 0) { $totalCautious = [math]::Round((($cautItems | Measure-Object Bytes -Sum).Sum / 1MB), 2) }
+    if ($forbItems.Count -gt 0) { $totalForbidden = [math]::Round((($forbItems | Measure-Object Bytes -Sum).Sum / 1MB), 2) }
+    $totalAll = [math]::Round((($dedupedFindings | Measure-Object Bytes -Sum).Sum / 1MB), 2)
 }
 
 if (-not $results -or $results.Count -eq 0) {
@@ -105,13 +225,24 @@ if (-not $results -or $results.Count -eq 0) {
     Write-Host "  Do NOT delete:     $forbGB GB" -ForegroundColor Red
     Write-Host "  Total scanned:     $allGB GB" -ForegroundColor White
     Write-Host ""
-    $byCategory = $results | Group-Object Category | Sort-Object { ($_.Group | ForEach-Object { $_.SizeMB } | Measure-Object -Sum).Sum } -Descending
+    Write-Host "  Deduplicated paths: $($dedupedFindings.Count) from $($results.Count) findings" -ForegroundColor DarkGray
+    $byCategory = $dedupedFindings | Group-Object { $_.Category } | Sort-Object { ($_.Group | Measure-Object Bytes -Sum).Sum } -Descending
     Write-Host "  By category:" -ForegroundColor White
     foreach ($grp in $byCategory) {
-        $catSize = [math]::Round(($grp.Group | ForEach-Object { $_.SizeMB } | Measure-Object -Sum).Sum, 2)
+        $catSize = [math]::Round((($grp.Group | Measure-Object Bytes -Sum).Sum / 1MB), 2)
         $catGB = [math]::Round($catSize / 1024, 2)
         Write-Host "    $($grp.Name): $catGB GB" -ForegroundColor DarkGray
     }
+}
+if ($Global:CDriveInventory -and $Global:CDriveInventory.Count -gt 0) {
+    Write-Host "  Inventory only:     $($Global:CDriveInventory.Count) space clues (not added to cleanup totals)" -ForegroundColor DarkCyan
+}
+if ($Global:CDriveScanTelemetry.Count -gt 0) {
+    Write-Host "  Slowest scanner stages:" -ForegroundColor White
+    foreach ($stage in @($Global:CDriveScanTelemetry | Sort-Object Seconds -Descending | Select-Object -First 5)) {
+        Write-Host ("    {0,-3} {1,7:N1}s  {2}" -f $stage.Category, $stage.Seconds, $stage.Status) -ForegroundColor DarkGray
+    }
+    Write-Host ("  Measurement cache: {0} hits / {1} misses" -f $Global:CDriveMeasurementCacheHits, $Global:CDriveMeasurementCacheMisses) -ForegroundColor DarkGray
 }
 
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -122,7 +253,9 @@ $catNamesCN = @{
     "A"="系统隐藏"; "B"="临时缓存"; "C"="开发缓存"; "D"="浏览器";
     "E"="应用数据"; "F"="大文件"; "G"="特殊占用"; "H"="安全软件";
     "I"="多版本"; "J"="重复运行时"; "K"="输入法"; "L"="即时通讯";
-    "VM"="虚拟内存"; "SI"="Search索引"; "O"="定向优化"
+    "VM"="虚拟内存"; "SI"="Search索引"; "O"="定向优化"; "GR"="增长追踪";
+    "U"="不常用软件候选"; "MX"="C盘零碎信息"; "WU"="Windows更新残留";
+    "SA"="NTFS实际占用"
 }
 
 $knownBloat = @{
@@ -160,8 +293,22 @@ function BuildReport {
         $lines += "| 总容量 | $($space.TotalGB) GB | - |"
         $lines += "| 已用空间 | $($space.UsedGB) GB ($($space.UsedPercent)%) | $usageLevelCN |"
         $lines += "| 可用空间 | $($space.FreeGB) GB | $freeLevelCN |"
-        $lines += "| 可安全释放 | $([math]::Round($totalCleanable/1024,2)) GB | ✅ 安全 |"
-        $lines += "| 需确认后释放 | $([math]::Round($totalCautious/1024,2)) GB | ⚠️ 需确认 |"
+        $lines += "| 可安全释放 | $([math]::Round($totalCleanable/1024,2)) GB |"
+        $lines += "| 需确认后释放 | $([math]::Round($totalCautious/1024,2)) GB |"
+    }
+
+    if ($Global:CDriveInventory -and $Global:CDriveInventory.Count -gt 0) {
+        $lines += ""
+        $lines += "# 二、C盘零碎空间信息"
+        $lines += ""
+        $lines += "> 下面是空间解释信息，不是可直接删除额度；目录之间可能与其他扫描类别重叠。"
+        $lines += ""
+        $lines += "| 类型 | 项目 | 大小 | 路径 | 证据 |"
+        $lines += "|------|------|------:|------|------|"
+        foreach ($item in @($Global:CDriveInventory | Sort-Object SizeMB -Descending | Select-Object -First 30)) {
+            $size = if ($item.SizeMB -ge 1024) { "$([math]::Round($item.SizeMB/1024,2)) GB" } else { "$($item.SizeMB) MB" }
+            $lines += "| $($item.Kind) | $($item.Name) | $size | $($item.Path) | $($item.Evidence) |"
+        }
     }
     
     if ($Global:VMAssessResult) {
@@ -181,8 +328,8 @@ function BuildReport {
         $lines += ""
         $lines += "| 指标 | 数值 | 状态 |"
         $lines += "|------|------|------|"
-        $freeStatus = if ($vm.FreePercent -lt 30) { '🔴 不足' } else { '✅ 充足' }
-        $lines += "| C盘可用空间 | $($vm.FreePercent)% | $freeStatus |"
+        $vmStatus = if ($vm.FreePercent -lt 30) { '🔴 不足' } else { '✅ 充足' }
+        $lines += "| C盘可用空间 | $($vm.FreePercent)% | $vmStatus |"
         $lines += "| 页面文件位置 | $(if ($vm.OnC) { 'C盘' } else { '非系统分区' }) | $(if ($vm.OnC -and $vm.Assessment -ne 'normal') { '⚠️ 可优化' } else { '✅ 良好' }) |"
         $lines += "| 页面文件大小 | $vmSizeGB GB | - |"
         $lines += "| 评估结果 | $assessmentCN |"
@@ -252,8 +399,21 @@ if ($OutputFormat -eq "json") {
     $reportsDir = Join-Path $SkillRoot "reports"
     if (-not (Test-Path $reportsDir)) { New-Item -ItemType Directory -Path $reportsDir -Force | Out-Null }
     $jsonPath = Join-Path $reportsDir "CleanSight-${reportId}.json"
-    $output = @{ report_id = $reportId; version = $VERSION; timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; scan_duration = $scanDuration }
-    $output | ConvertTo-Json -Depth 5 | Out-File $jsonPath -Encoding UTF8
+    $output = @{
+        report_id = $reportId
+        version = $VERSION
+        timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        scan_duration = $scanDuration
+        drive = $space
+        totals = @{ safe_mb = $totalCleanable; cautious_mb = $totalCautious; forbidden_mb = $totalForbidden; scanned_mb = $totalAll }
+        findings = @($results)
+        deduplicated_findings = @($dedupedFindings)
+        inventory = @($Global:CDriveInventory)
+        telemetry = @($Global:CDriveScanTelemetry)
+        scanner_metadata = $Global:CDriveScannerMetadata
+        measurement_cache = @{ hits=$Global:CDriveMeasurementCacheHits; misses=$Global:CDriveMeasurementCacheMisses }
+    }
+    $output | ConvertTo-Json -Depth 8 | Out-File $jsonPath -Encoding UTF8
     Write-Host "  JSON report generated: $jsonPath" -ForegroundColor Green
 }
 

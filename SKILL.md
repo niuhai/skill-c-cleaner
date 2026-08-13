@@ -1,6 +1,6 @@
 ---
 name: "c-drive-cleaner"
-description: "AI驱动的C盘智能决策顾问——不是清理工具，而是你的磁盘健康私人AI管家。深度分析+个性化建议+安全执行指导。当用户询问C盘空间不足、想清理垃圾、释放磁盘空间、想将某些数据移出C盘时调用此技能。"
+description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实际分配空间测量、父子目录去重、应用级增长与清理后再生追踪、Windows 更新残留、不常用软件和零碎空间盘点，定位空间为何增长及清理为何无效。当用户询问C盘空间不足、清理不动、可用空间未增加、缓存重新生成、想查不常用软件/大文件/隐藏占用、迁移数据或复盘清理效果时调用此技能。"
 ---
 
 ## 定向优化（O 类）
@@ -12,6 +12,37 @@ description: "AI驱动的C盘智能决策顾问——不是清理工具，而是
 - Codex：只处理 `.cache\codex-runtimes` 下的 `codex-runtime-install-*` 与 `codex-primary-runtime.previous-*`；保留当前 `codex-primary-runtime`。Whisper 模型单独列为谨慎项。
 
 使用 `.\cleaners\clean-targeted-optimization.ps1 -WhatIf` 预览，确认后追加 `-ReallyDelete`；脚本会检查相关进程并阻止越界路径。
+
+## 不常用软件与 C 盘零碎信息
+
+- `U` 类只读取卸载注册表，按安装日期、体积和证据质量列出“待确认候选”；它不能可靠知道最后使用时间，不自动卸载，也不建议直接删除安装目录。
+- `MX` 类解释清理规则之外的空间：C 盘一级目录、根目录系统文件、用户目录一级散落文件、扩展名分布和权限盲区。MX 是信息层，结果之间可能重叠，不能把它们相加当成可释放空间。
+- 详细边界和判定依据见 [`references/unused-and-misc.md`](references/unused-and-misc.md)。
+
+## 实际占用与再生追踪
+
+- 运行 `.\measure-space.ps1 -Paths "<精确路径>"` 比较目录项逻辑大小、硬链接去重后的逻辑大小和 NTFS 分配字节；慢速全量核算使用 `SA` 类。
+- 运行 `.\track-growth.ps1 -Mode compare -Record` 建立层级化 v2 基线。只汇总互不重叠的 `coverage` 根；`detail` 只归因，不与父目录相加。
+- 定向清理执行后读取清理会话给出的 SessionId，并在 5 分钟、1 小时、24 小时后运行 `.\track-regeneration.ps1 -Mode check -SessionId <id>`。
+- 运行 `.\analyze.ps1 -Categories "WU"` 检查 `$WinREAgent`、Windows Update 下载、Delivery Optimization 和待重启信号。
+- 详细规则见 [`references/space-accounting-and-regeneration.md`](references/space-accounting-and-regeneration.md)。
+
+## 四件套迭代闭环
+
+本技能采用四层 Loop Engineering 机制，解决“扫描后清理效果不明显、空间持续增长但不知道来源”的问题：
+
+- `references/iteration-loop.md`：总循环——多源发现 → 入池规划 → 执行 → 验证 → 沉淀 → 下一轮。
+- `references/project-pilot.md`：项目级 PDCA，固定 8 步状态机并要求每一步有证据。
+- `references/concurrent-dispatcher.md`：独立扫描/预览的并发调度规则，限制并发、隔离输出、避免重叠清理。
+- `references/code-review-checklist.md`：改前契约、改后自检、里程碑外审三层门禁。
+
+日常诊断使用：
+
+```powershell
+.\iteration-loop.ps1 -Mode diagnose -RecordGrowth
+```
+
+它默认不删除文件，只记录当前 C 盘和重点目录快照。下次运行会显示每个路径的增量和日增长速度；只有在快速证据不足时才追加 `-IncludeSlowScan`。
 
 # CleanSight — AI Disk Health Advisor
 
@@ -58,13 +89,13 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 ```
 用户触发 "C盘快满了" / "帮我分析C盘"
   ↓
-1. 执行 12 类别只读扫描（scanners/）
+1. 执行类别只读扫描 + 路径级增长快照（scanners/）
   ↓
-2. 生成 AI 决策报告（健康评分 + Tier 分级建议）
+2. 生成 AI 决策报告（健康评分 + Tier 分级建议 + 增长证据）
   ↓
-3. 展示摘要 → 用户追问 → 深入分析
+3. 先预览和规划，不把“可清理”误报成“已释放”
   ↓
-4. 用户选择执行项 → AI 提供精确命令 + 安全提示
+4. 用户选择执行项 → 执行 → 重扫同一路径 → 记录实际释放量
 ```
 
 ### 一键模式
@@ -74,6 +105,10 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 .\analyze.ps1 -OutputFormat markdown                   # 生成 Markdown 报告
 .\analyze.ps1 -OutputFormat json                       # JSON 格式
 .\analyze.ps1 -Categories "C,D"                        # 只扫描开发缓存+浏览器
+.\analyze.ps1 -Fast                                     # 快速证据集；GR 读取带时间戳快照，跳过 F/H/MX/SA
+.\analyze.ps1 -Categories "F,GR" -RecordGrowth          # 原生全盘扫描并建立同源增长基线
+.\track-growth.ps1 -Mode compare -Record               # 无 F 结果时的 robocopy 兼容基线
+.\measure-space.ps1 -Paths "%APPDATA%\Qoder"          # 核算逻辑大小与 NTFS 分配字节
 ```
 
 ### 扫描类别速查
@@ -85,13 +120,17 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 | C-开发缓存 | scan-dev-caches | npm/pip/cargo/maven/gradle等 | 开发者必看 |
 | D-浏览器 | scan-browsers | Chrome/Edge/Firefox等 | 所有人 |
 | E-应用数据 | scan-app-data | IDE/媒体/办公/AI工具 | 深度清理 |
-| F-大文件 | scan-large-files | TOP 20大文件+文件夹排行 | 快速定位 |
+| F-大文件 | scan-large-files | 原生并发 TOP 20 + 用户目录排行 + 增长聚合 | 快速定位 |
 | G-特殊占用 | scan-special-sources | Docker/WSL/游戏平台 | 特殊需求 |
 | H-安全软件 | scan-security-software | EDR/NAC/杀毒 | 仅了解 |
 | I-多版本 | scan-multi-version | 多版本残留 | 整洁度 |
 | J-重复运行时 | scan-duplicate-runtimes | Electron/CEF重复 | 高级优化 |
 | K-输入法 | scan-ime-data | 词库/日志 | 细节清理 |
 | L-即时通讯 | scan-im-apps | 微信/QQ/钉钉缓存 | 社交应用 |
+| U-不常用软件候选 | scan-unused-software | 卸载注册表、安装时间、体积候选 | 只建议确认，不自动卸载 |
+| MX-C盘零碎信息 | scan-misc-space | 根目录、一级目录、散落文件、权限盲区 | 解释空间，不等于可删除 |
+| WU-Windows更新残留 | scan-windows-update-residue | WinRE/更新下载/待重启/CBS日志 | 只读，更新完成前保留 |
+| SA-NTFS实际占用 | scan-space-accounting | 逻辑、硬链接去重、分配字节 | 慢速按需核算 |
 
 ---
 
@@ -132,7 +171,7 @@ c-drive-cleaner/
 ├── _common.ps1                 ← 公共模块（性能+统一接口）
 ├── analyze.ps1                 ← 一键入口（console/markdown/json）
 │
-├── scanners/   (12个只读扫描)
+├── scanners/   (类别只读扫描，含 GR/U/MX/WU/SA)
 ├── cleaners/   (3个清理: safe/deep/dev-caches)
 ├── migrators/  (3个迁移: appdata/dev-caches/wsl-docker)
 ├── extensions/
@@ -142,6 +181,11 @@ c-drive-cleaner/
 ├── safety/     (备份+快照+回滚)
 ├── reports/    (生成的报告)
 ├── scheduled/  (定期自动化)
+├── references/  (四件套迭代机制与审查门禁)
+├── iteration-loop.ps1  (有界迭代入口，默认只诊断/预览)
+├── track-growth.ps1    (路径级快照、增量与日增长率)
+├── measure-space.ps1   (NTFS 分配字节与硬链接去重核算)
+├── track-regeneration.ps1 (清理后 5m/1h/24h 再生检查)
 ├── tests/      (测试评测体系 — 与 CONTEST-SUBMISSION.md 同步维护)
 │   ├── TEST-RESULTS-LOG.md     ← 真实测试结果
 │   ├── IDEA-LOG.md             ← 想法与优化追踪
@@ -240,15 +284,22 @@ c-drive-cleaner/
 
 ---
 
-*CleanSight v6.4.0 — AI Disk Health Advisor*
+## v6.5.0 performance and accounting note
+
+- `scan-large-files.ps1` uses 422 bounded NVMe-friendly partitions over a Win32 `FindFirstFileExW` engine. It keeps a bounded TOP-N set, merges cross-partition user totals, skips reparse targets, and reports inaccessible coverage.
+- The same F pass aggregates the configured growth paths. GR reuses those totals in a full run; `-Fast` reads the most recent source-tagged snapshot and states its age instead of rescanning parent and child trees.
+- Cleanup totals are built from exact measured paths with parent/child deduplication. Search-index burden and whole Electron/CEF application footprints are inventory only.
+- Measured on this machine: F scanned about 580,000 files in 14.9-36.2 seconds; `F,GR` completed in 16.0 seconds; `-Fast` fell from 153.6 seconds to 26.6 seconds.
+
+*CleanSight v6.5.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
-## Virtual memory hardening (VM)
+## 虚拟内存强化规则（VM）
 
-Run `analyze.ps1 -Categories "VM"` before making any paging-file decision. Read the registry `PagingFiles` configuration first, then use pagefile file metadata as a secondary signal. If permissions block a read, report the limitation instead of claiming that no pagefile exists.
+运行 `analyze.ps1 -Categories "VM"` 时，优先读取注册表 `PagingFiles` 配置，再用 `pagefile.sys` 实际文件大小辅助判断。权限不足时必须标记“无法读取”，不能把页面文件误报为不存在。
 
-- Separate C-drive space recovery, commit capacity, and I/O performance; moving a pagefile is not automatically a speed upgrade.
-- Treat the maximum configured size as a limit, not current disk usage; estimate reclaimable space from actual file size or verifiable initial size.
-- Compare every fixed drive by free space, physical disk number, media type, and bus type; leave headroom beyond the maximum required size.
-- If a hybrid layout already exists, keep the non-C primary pagefile and avoid repeating a large migration recommendation.
-- Keep a C pagefile until crash-dump requirements are confirmed. Never directly delete or move `pagefile.sys`.
-- Do not change registry, system properties, or pagefiles automatically. Require preview, explicit confirmation, reboot, and a post-reboot verification scan.
+- 先区分三件事：释放 C 盘空间、增加系统提交容量、获得 I/O 性能收益；迁移页面文件通常只保证前两者之一，不能默认提速。
+- 页面文件最大配置值不是当前占用量；空间收益按实际文件大小或可验证的初始配置估算。
+- 对 C/D/E 等固定盘逐一比较可用空间、物理磁盘编号、介质类型和总线类型；目标盘必须留出当前最大配置值之外的安全余量。
+- 已存在“C 盘小页面文件 + 非 C 盘主页面文件”时，优先报告为混合布局，不重复建议大规模迁移。
+- C 盘页面文件可能与崩溃转储有关；未确认转储需求前，不建议移除或改为 0。
+- 不自动修改注册表、系统属性或页面文件；任何迁移/大小调整都必须先展示 WhatIf/预览、获得明确确认、重启后再次扫描验证。

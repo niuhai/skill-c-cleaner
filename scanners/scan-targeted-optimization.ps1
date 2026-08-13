@@ -2,9 +2,7 @@
 
 $scannerRoot = Split-Path -Parent $PSCommandPath
 $skillRoot = Split-Path -Parent $scannerRoot
-if (-not (Test-Path (Join-Path $skillRoot "_common.ps1"))) {
-    throw "Skill root could not be resolved from the script location."
-}
+if (-not (Test-Path (Join-Path $skillRoot "_common.ps1"))) { $skillRoot = "C:\.trae\skills\c-drive-cleaner" }
 if (-not (Get-Command "Write-ScanResult" -ErrorAction SilentlyContinue)) {
     . (Join-Path $skillRoot "_common.ps1")
 }
@@ -34,14 +32,19 @@ function Resolve-TargetMatches {
     return @()
 }
 
-function Get-TargetBytes {
+function Get-TargetMeasurement {
     param([System.IO.FileSystemInfo]$Item)
-    if (-not $Item) { return [int64]0 }
-    if (-not $Item.PSIsContainer) { return [int64]$Item.Length }
-    $m = Get-ChildItem -LiteralPath $Item.FullName -Force -File -Recurse -ErrorAction SilentlyContinue |
-        Measure-Object -Property Length -Sum
-    if ($m.Sum) { return [int64]$m.Sum }
-    return [int64]0
+    if (-not $Item) { return $null }
+    if (-not $Item.PSIsContainer) {
+        return [pscustomobject]@{ Path=$Item.FullName; Bytes=[int64]$Item.Length; Status="ok"; Evidence="file length" }
+    }
+    $measurement = Get-PathLogicalMeasurement -Path $Item.FullName
+    return [pscustomobject]@{
+        Path = $Item.FullName
+        Bytes = [int64]$measurement.Bytes
+        Status = $measurement.Status
+        Evidence = $measurement.Evidence
+    }
 }
 
 function Test-WithinRoot {
@@ -66,8 +69,9 @@ foreach ($target in @($config.targets)) {
             $key = $item.FullName.ToLowerInvariant()
             if ($seen.ContainsKey($key)) { continue }
             $seen[$key] = $true
-            $bytes = Get-TargetBytes $item
-            if ($bytes -le 0) { continue }
+            $measurement = Get-TargetMeasurement $item
+            if (-not $measurement -or $measurement.Bytes -le 0) { continue }
+            $bytes = [int64]$measurement.Bytes
 
             $preserveText = @($target.preserve) -join ', '
             $preserve = if ($target.preserve -and @($target.preserve).Count -gt 0) {
@@ -76,7 +80,8 @@ foreach ($target in @($config.targets)) {
             $advice = if ($target.risk -eq "safe") { "Clean after closing the app" } else { "Confirm after closing related processes" }
             Write-ScanResult -Category "O" -Name "$($target.name) / $($item.Name)" `
                 -Size $bytes -Risk $target.risk -Path $item.FullName `
-                -Advice $advice -Migration "" -Note "$($target.note) $preserve" -Source "Targeted"
+                -Advice $advice -Migration "" -Note "$($target.note) $preserve" -Source "Targeted" `
+                -Measurements @($measurement)
         }
     }
 }

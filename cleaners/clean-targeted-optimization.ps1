@@ -11,9 +11,7 @@ param(
 
 $cleanerRoot = Split-Path -Parent $PSCommandPath
 $skillRoot = Split-Path -Parent $cleanerRoot
-if (-not (Test-Path (Join-Path $skillRoot "_common.ps1"))) {
-    throw "Skill root could not be resolved from the script location."
-}
+if (-not (Test-Path (Join-Path $skillRoot "_common.ps1"))) { $skillRoot = "C:\.trae\skills\c-drive-cleaner" }
 . (Join-Path $skillRoot "_common.ps1")
 
 $configPath = Join-Path $skillRoot "extensions\targeted-optimization.json"
@@ -77,6 +75,14 @@ if ($preview) {
 $totalBytes = [int64]0
 $matchedCount = 0
 $deletedCount = 0
+$sessionId = Get-Date -Format "yyyyMMdd-HHmmss"
+$sessionStarted = Get-Date
+$driveFreeBefore = [int64]0
+if (-not $preview) {
+    $beforeDrive = New-Object IO.DriveInfo("C:\")
+    $driveFreeBefore = [int64]$beforeDrive.AvailableFreeSpace
+}
+$auditRows = @()
 
 foreach ($target in @($config.targets)) {
     if ($selected.Count -gt 0 -and $target.id -notin $selected -and $target.name -notin $selected) { continue }
@@ -106,6 +112,8 @@ foreach ($target in @($config.targets)) {
             Write-Host "     Note: $($target.note)" -ForegroundColor DarkGray
 
             if (-not $preview) {
+                $beforeActual = Get-NtfsPathMeasurement -Path $item.FullName -MaxFiles 200000 -MaxSeconds 60
+                $ok = $false
                 try {
                     if ($item.PSIsContainer) {
                         $ok = Remove-Directory -Path $item.FullName -ShowProgress
@@ -116,6 +124,21 @@ foreach ($target in @($config.targets)) {
                     if ($ok) { $deletedCount++ }
                 } catch {
                     Write-Host "     Cleanup failed: $($_.Exception.Message)" -ForegroundColor Red
+                }
+                $afterActual = Get-NtfsPathMeasurement -Path $item.FullName -MaxFiles 200000 -MaxSeconds 60
+                $auditRows += [pscustomobject]@{
+                    targetId = [string]$target.id
+                    targetName = [string]$target.name
+                    path = $item.FullName
+                    deleted = [bool]$ok
+                    before = [pscustomobject]@{
+                        status=$beforeActual.Status; logicalBytes=[int64]$beforeActual.EntryLogicalBytes
+                        allocatedBytes=[int64]$beforeActual.AllocatedBytes; fileCount=[int]$beforeActual.FileCount
+                    }
+                    after = [pscustomobject]@{
+                        status=$afterActual.Status; logicalBytes=[int64]$afterActual.EntryLogicalBytes
+                        allocatedBytes=[int64]$afterActual.AllocatedBytes; fileCount=[int]$afterActual.FileCount
+                    }
                 }
             }
         }
@@ -128,4 +151,37 @@ if ($preview) {
     Write-Host "Preview total: $total across $matchedCount item(s)." -ForegroundColor Yellow
 } else {
     Write-Host "Processed: $deletedCount/$matchedCount item(s); matched total: $total." -ForegroundColor Green
+    $driveAfter = New-Object IO.DriveInfo("C:\")
+    $driveFreeDelta = [int64]$driveAfter.AvailableFreeSpace - $driveFreeBefore
+    $allocatedReclaim = [int64](($auditRows | ForEach-Object { [int64]$_.before.allocatedBytes - [int64]$_.after.allocatedBytes } | Measure-Object -Sum).Sum)
+    $sessionDir = Join-Path $skillRoot "reports\cleanup-sessions"
+    if (-not (Test-Path -LiteralPath $sessionDir)) { New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null }
+    $baselineTargets = @($auditRows | ForEach-Object {
+        [pscustomobject]@{ path=$_.path; logicalStatus=$_.before.status; logicalBytes=$_.before.logicalBytes; allocatedStatus=$_.before.status; allocatedBytes=$_.before.allocatedBytes; fileCount=$_.before.fileCount }
+    })
+    $immediateTargets = @($auditRows | ForEach-Object {
+        [pscustomobject]@{ path=$_.path; logicalStatus=$_.after.status; logicalBytes=$_.after.logicalBytes; allocatedStatus=$_.after.status; allocatedBytes=$_.after.allocatedBytes; fileCount=$_.after.fileCount }
+    })
+    $session = [pscustomobject]@{
+        schema = 1
+        sessionId = $sessionId
+        label = "targeted optimization"
+        createdAt = $sessionStarted.ToString("o")
+        completedAt = (Get-Date).ToString("o")
+        baseline = [pscustomobject]@{ driveFreeBytes=$driveFreeBefore; targets=$baselineTargets }
+        cleanup = [pscustomobject]@{
+            matchedLogicalBytes=$totalBytes; measuredAllocatedReclaimBytes=$allocatedReclaim
+            actualDriveFreeDeltaBytes=$driveFreeDelta; processed=$deletedCount; matched=$matchedCount; targets=$auditRows
+        }
+        checkpoints = @([pscustomobject]@{
+            timestamp=(Get-Date).ToString("o"); elapsedMinutes=[math]::Round(((Get-Date)-$sessionStarted).TotalMinutes,2)
+            stage="immediate"; driveFreeBytes=[int64]$driveAfter.AvailableFreeSpace; driveFreeDeltaBytes=$driveFreeDelta; targets=$immediateTargets
+        })
+    }
+    $sessionPath = Join-Path $sessionDir "cleanup-$sessionId.json"
+    $session | ConvertTo-Json -Depth 12 | Out-File -LiteralPath $sessionPath -Encoding UTF8
+    Write-Host "Actual C-drive free-space delta: $([math]::Round($driveFreeDelta/1GB,3)) GB" -ForegroundColor Cyan
+    Write-Host "Measured allocated-byte reclaim: $([math]::Round($allocatedReclaim/1GB,3)) GB" -ForegroundColor Cyan
+    Write-Host "Cleanup session: $sessionPath" -ForegroundColor Green
+    Write-Host "Later regeneration check: .\track-regeneration.ps1 -Mode check -SessionId $sessionId" -ForegroundColor DarkGray
 }

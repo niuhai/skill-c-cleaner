@@ -1,4 +1,3 @@
-
 # scan-virtual-memory.ps1 - virtual memory assessment
 # Read-only. Never changes registry, system properties, or pagefile files.
 
