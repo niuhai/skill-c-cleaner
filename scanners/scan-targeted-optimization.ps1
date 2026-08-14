@@ -32,18 +32,20 @@ function Resolve-TargetMatches {
     return @()
 }
 
-function Get-TargetMeasurement {
-    param([System.IO.FileSystemInfo]$Item)
-    if (-not $Item) { return $null }
-    if (-not $Item.PSIsContainer) {
-        return [pscustomobject]@{ Path=$Item.FullName; Bytes=[int64]$Item.Length; Status="ok"; Evidence="file length" }
+function Convert-NativeTargetMeasurement {
+    param([string]$Path, [object]$Native)
+    if (-not $Native.Exists) {
+        return [pscustomobject]@{ Path=$Path; Bytes=[int64]0; Status="missing"; Evidence="Win32 batch measurement; path missing or not enumerable" }
     }
-    $measurement = Get-PathLogicalMeasurement -Path $Item.FullName
+    if ($Native.ReparsePoint) {
+        return [pscustomobject]@{ Path=$Path; Bytes=[int64]0; Status="partial"; Evidence="Win32 batch measurement; reparse-point path was not followed" }
+    }
+    $status = if (-not $Native.RootAccessible) { "inaccessible" } elseif ($Native.SkippedDirectories -gt 0) { "partial" } else { "ok" }
     return [pscustomobject]@{
-        Path = $Item.FullName
-        Bytes = [int64]$measurement.Bytes
-        Status = $measurement.Status
-        Evidence = $measurement.Evidence
+        Path = $Path
+        Bytes = [int64]$Native.Bytes
+        Status = $status
+        Evidence = "Win32 batch measurement; skipped_directories=$($Native.SkippedDirectories); elapsed_seconds=$($Native.ElapsedSeconds)"
     }
 }
 
@@ -56,7 +58,7 @@ function Test-WithinRoot {
     } catch { return $false }
 }
 
-Write-Host "===== Targeted optimization scan =====" -ForegroundColor Cyan
+$targetMatches = [Collections.ArrayList]::new()
 foreach ($target in @($config.targets)) {
     $root = Expand-EnvPath $target.root
     if (-not (Test-Path -LiteralPath $root -ErrorAction SilentlyContinue)) { continue }
@@ -69,20 +71,42 @@ foreach ($target in @($config.targets)) {
             $key = $item.FullName.ToLowerInvariant()
             if ($seen.ContainsKey($key)) { continue }
             $seen[$key] = $true
-            $measurement = Get-TargetMeasurement $item
-            if (-not $measurement -or $measurement.Bytes -le 0) { continue }
-            $bytes = [int64]$measurement.Bytes
-
-            $preserveText = @($target.preserve) -join ', '
-            $preserve = if ($target.preserve -and @($target.preserve).Count -gt 0) {
-                ("Keep: {0}" -f $preserveText)
-            } else { "" }
-            $advice = if ($target.risk -eq "safe") { "Clean after closing the app" } else { "Confirm after closing related processes" }
-            Write-ScanResult -Category "O" -Name "$($target.name) / $($item.Name)" `
-                -Size $bytes -Risk $target.risk -Path $item.FullName `
-                -Advice $advice -Migration "" -Note "$($target.note) $preserve" -Source "Targeted" `
-                -Measurements @($measurement)
+            [void]$targetMatches.Add([pscustomobject]@{ Target=$target; Item=$item })
         }
+    }
+}
+
+Write-Host "===== Targeted optimization scan =====" -ForegroundColor Cyan
+if ($targetMatches.Count -gt 0) {
+    $paths = [string[]]@($targetMatches | ForEach-Object { $_.Item.FullName })
+    $nativeMeasurements = $null
+    try {
+        Initialize-NativeFileScanner
+        $nativeMeasurements = [CleanSight.NativeFileScanner]::MeasurePaths($paths, 4)
+    } catch {
+        Write-Host "  Native batch measurement unavailable; using compatibility fallback." -ForegroundColor DarkGray
+    }
+    for ($index = 0; $index -lt $targetMatches.Count; $index++) {
+        $match = $targetMatches[$index]
+        $target = $match.Target
+        $item = $match.Item
+        $measurement = if ($null -ne $nativeMeasurements) {
+            Convert-NativeTargetMeasurement -Path $item.FullName -Native $nativeMeasurements[$index]
+        } else {
+            Get-PathLogicalMeasurement -Path $item.FullName
+        }
+        if (-not $measurement -or $measurement.Bytes -le 0) { continue }
+        $bytes = [int64]$measurement.Bytes
+
+        $preserveText = @($target.preserve) -join ', '
+        $preserve = if ($target.preserve -and @($target.preserve).Count -gt 0) {
+            ("Keep: {0}" -f $preserveText)
+        } else { "" }
+        $advice = if ($target.risk -eq "safe") { "Clean after closing the app" } else { "Confirm after closing related processes" }
+        Write-ScanResult -Category "O" -Name "$($target.name) / $($item.Name)" `
+            -Size $bytes -Risk $target.risk -Path $item.FullName `
+            -Advice $advice -Migration "" -Note "$($target.note) $preserve" -Source "Targeted" `
+            -Measurements @($measurement)
     }
 }
 Write-Host ""

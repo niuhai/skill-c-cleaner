@@ -15,7 +15,7 @@
   </p>
   
   <p align="center">
-    <img src="https://img.shields.io/badge/version-v6.4.0-blue.svg" alt="Version"/>
+    <img src="https://img.shields.io/badge/version-v6.6.0-blue.svg" alt="Version"/>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
     <img src="https://img.shields.io/badge/powershell-5.1%2B-blue.svg" alt="PowerShell"/>
     <img src="https://img.shields.io/badge/platform-windows-lightgrey.svg" alt="Platform"/>
@@ -82,8 +82,8 @@ I-多版本   │ J-重复运行时│ K-输入法   │ L-即时通讯
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/your-username/c-drive-cleaner.git
-cd c-drive-cleaner
+git clone https://github.com/niuhai/skill-c-cleaner.git
+cd skill-c-cleaner
 
 # 2. 运行完整分析（控制台输出）
 .\analyze.ps1
@@ -96,7 +96,13 @@ cd c-drive-cleaner
 
 # 5. 输出 JSON 格式（可被其他工具消费）
 .\analyze.ps1 -OutputFormat json
+
+# 6. 日常快速扫描；完整 J 类仍可做 AppData 深度发现
+.\analyze.ps1 -Fast -OutputFormat json
+.\analyze.ps1 -Categories "J"
 ```
+
+v6.6 的快速模式使用 Win32 原生目录测量、定向运行时候选和批量磁盘映射；本机 16 类扫描实测约 9.5 秒。完整模式仍保留全覆盖扫描，且任意层级的 junction/符号链接不会被当作 C 盘可释放空间或沿链接清理。
 
 ### 示例输出
 
@@ -447,8 +453,8 @@ copies or substantial portions of the Software.
 
 ## 📞 支持与反馈
 
-- **问题反馈**: [GitHub Issues](https://github.com/your-username/c-drive-cleaner/issues)
-- **功能建议**: [GitHub Discussions](https://github.com/your-username/c-drive-cleaner/discussions)
+- **问题反馈**: [GitHub Issues](https://github.com/niuhai/skill-c-cleaner/issues)
+- **功能建议**: [GitHub Discussions](https://github.com/niuhai/skill-c-cleaner/discussions)
 - **Star 这个项目** ⭐ 如果觉得有用
 
 ---

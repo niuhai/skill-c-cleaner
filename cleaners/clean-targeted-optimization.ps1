@@ -35,10 +35,8 @@ function Resolve-TargetMatches {
 function Get-TargetBytes {
     param([System.IO.FileSystemInfo]$Item)
     if (-not $Item) { return [int64]0 }
-    if (-not $Item.PSIsContainer) { return [int64]$Item.Length }
-    $m = Get-ChildItem -LiteralPath $Item.FullName -Force -File -Recurse -ErrorAction SilentlyContinue |
-        Measure-Object -Property Length -Sum
-    if ($m.Sum) { return [int64]$m.Sum }
+    $m = Get-PathLogicalMeasurement -Path $Item.FullName
+    if ($m.Status -eq "ok") { return [int64]$m.Bytes }
     return [int64]0
 }
 

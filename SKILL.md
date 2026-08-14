@@ -13,9 +13,11 @@ description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实
 
 使用 `.\cleaners\clean-targeted-optimization.ps1 -WhatIf` 预览，确认后追加 `-ReallyDelete`；脚本会检查相关进程并阻止越界路径。
 
+如果目标本身或任意祖先目录是 junction/符号链接，C 盘扫描不得沿链接统计或清理。应报告为 `partial`；链接目标位于 D/E 盘时，删除只会释放目标盘空间。
+
 ## 不常用软件与 C 盘零碎信息
 
-- `U` 类只读取卸载注册表，按安装日期、体积和证据质量列出“待确认候选”；它不能可靠知道最后使用时间，不自动卸载，也不建议直接删除安装目录。
+- `U` 类按安装日期、体积和证据质量列出“待确认候选”；快速模式只复用卸载注册表体积，完整模式仅为可能相关的 C 盘安装目录补测体积，不遍历 D/E 盘软件。它不能可靠知道最后使用时间，不自动卸载，也不建议直接删除安装目录。
 - `MX` 类解释清理规则之外的空间：C 盘一级目录、根目录系统文件、用户目录一级散落文件、扩展名分布和权限盲区。MX 是信息层，结果之间可能重叠，不能把它们相加当成可释放空间。
 - 详细边界和判定依据见 [`references/unused-and-misc.md`](references/unused-and-misc.md)。
 
@@ -291,7 +293,15 @@ c-drive-cleaner/
 - Cleanup totals are built from exact measured paths with parent/child deduplication. Search-index burden and whole Electron/CEF application footprints are inventory only.
 - Measured on this machine: F scanned about 580,000 files in 14.9-36.2 seconds; `F,GR` completed in 16.0 seconds; `-Fast` fell from 153.6 seconds to 26.6 seconds.
 
-*CleanSight v6.5.0 — AI Disk Health Advisor*
+## v6.6.0 focused-fast and reparse safety note
+
+- J uses registry install roots plus `extensions/runtime-inventory.json` in `-Fast`; ordinary J keeps broad AppData discovery. Both modes must state their coverage, and both found the same 8 runtime roots in the release test.
+- Logical directory measurement now uses in-process Win32 enumeration with a robocopy compatibility fallback. Targeted paths are measured in a bounded four-way batch.
+- Any reparse point in the target's ancestry stops C-drive accounting and targeted cleanup. This prevents redirected Qoder data on D from being reported as C reclaim.
+- VM maps all drive letters through bulk CIM association queries. U reuses the registry inventory and avoids non-C fallback traversal.
+- Measured on this machine: `-Fast` completed 16 categories in 9.5 seconds; focused J enumerated 17,613 files in 0.6 seconds, while broad J remained available and enumerated 383,651 files in 22.1 seconds.
+
+*CleanSight v6.6.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
 ## 虚拟内存强化规则（VM）
 

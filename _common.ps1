@@ -27,6 +27,54 @@ function Get-SkillRoot {
     throw "Skill root could not be resolved from the script location."
 }
 
+function Get-UninstallRegistryEntries {
+    <#
+    Read the three standard uninstall registry views once per analysis run.
+    J and U both consume this inventory, so caching avoids duplicate registry IO.
+    #>
+    if ($null -ne $Global:CDriveUninstallRegistryEntries) {
+        return @($Global:CDriveUninstallRegistryEntries)
+    }
+
+    $roots = @(
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    $entries = foreach ($root in $roots) {
+        Get-ItemProperty -Path $root -ErrorAction SilentlyContinue
+    }
+    $Global:CDriveUninstallRegistryEntries = @($entries)
+    return @($Global:CDriveUninstallRegistryEntries)
+}
+
+function Resolve-UninstallInstallFolder {
+    param(
+        $Entry,
+        [switch]$NoExistenceCheck,
+        [switch]$InstallLocationOnly,
+        [switch]$TrustDisplayIconPath
+    )
+
+    $location = [Environment]::ExpandEnvironmentVariables([string]$Entry.InstallLocation).Trim().Trim('"')
+    if ($location -and ($NoExistenceCheck -or (Test-Path -LiteralPath $location -PathType Container -ErrorAction SilentlyContinue))) {
+        try { return [IO.Path]::GetFullPath($location).TrimEnd('\') } catch { return $location.TrimEnd('\') }
+    }
+    if ($InstallLocationOnly) { return "" }
+
+    $icon = [Environment]::ExpandEnvironmentVariables([string]$Entry.DisplayIcon)
+    if ($icon) {
+        $icon = $icon.Split(',')[0].Trim().Trim('"')
+        if ($TrustDisplayIconPath -or (Test-Path -LiteralPath $icon -PathType Leaf -ErrorAction SilentlyContinue)) {
+            $parent = Split-Path -Parent $icon
+            if ($parent) {
+                try { return [IO.Path]::GetFullPath($parent).TrimEnd('\') } catch { return $parent.TrimEnd('\') }
+            }
+        }
+    }
+    return ""
+}
+
 function Get-FolderSizeFast {
     param([string]$Path)
     $measurement = Get-PathLogicalMeasurement -Path $Path
@@ -63,8 +111,8 @@ function Complete-PathLogicalMeasurement {
 
 function Get-PathLogicalMeasurement {
     <#
-    Measure logical bytes without changing the source. Directories use a unique
-    robocopy /L probe and /XJ so junctions are not followed or double-counted.
+    Measure logical bytes without changing the source. The native Win32 scanner
+    does not follow reparse points; robocopy /L /XJ remains a compatibility fallback.
     Status is ok, partial, inaccessible, or missing; callers must not treat a
     partial measurement as a reliable cleanup estimate.
     #>
@@ -81,6 +129,41 @@ function Get-PathLogicalMeasurement {
             return $Global:CDriveMeasurementCache[$cacheKey]
         }
         $Global:CDriveMeasurementCacheMisses++
+    }
+
+    try {
+        Initialize-NativeFileScanner
+        $native = [CleanSight.NativeFileScanner]::MeasurePath($Path)
+        if (-not $native.Exists) {
+            $result = [pscustomobject]@{
+                Path = $Path
+                Status = "missing"
+                Bytes = [int64]0
+                FileCount = [int64]0
+                Evidence = "Win32 FindFirstFileExW; path missing or not enumerable"
+            }
+        } elseif ($native.ReparsePoint) {
+            $result = [pscustomobject]@{
+                Path = $Path
+                Status = "partial"
+                Bytes = [int64]0
+                FileCount = [int64]0
+                Evidence = "Win32 FindFirstFileExW; root is a reparse point and was not followed"
+            }
+        } else {
+            $status = if (-not $native.RootAccessible) { "inaccessible" } elseif ($native.SkippedDirectories -gt 0) { "partial" } else { "ok" }
+            $result = [pscustomobject]@{
+                Path = $Path
+                Status = $status
+                Bytes = [int64]$native.Bytes
+                FileCount = [int64]$native.FileCount
+                Evidence = "Win32 FindFirstFileExW; skipped_directories=$($native.SkippedDirectories); elapsed_seconds=$($native.ElapsedSeconds)"
+            }
+        }
+        return (Complete-PathLogicalMeasurement -CacheKey $cacheKey -Measurement $result -NoCache:$NoCache)
+    } catch {
+        # Native compilation can be unavailable on constrained hosts; retain the
+        # robocopy implementation below as a compatibility fallback.
     }
 
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue

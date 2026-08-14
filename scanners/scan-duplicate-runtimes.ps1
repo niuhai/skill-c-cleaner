@@ -6,7 +6,9 @@ if (-not (Get-Command "Initialize-NativeFileScanner" -ErrorAction SilentlyContin
 }
 
 Write-Host "===== J: Electron/CEF runtime inventory =====" -ForegroundColor Cyan
-Write-Host "Single-pass native scan; application footprints are not counted as cleanup capacity." -ForegroundColor DarkGray
+$fastMode = [bool]$Global:CDriveFastMode
+$scanMode = if ($fastMode) { "focused-fast" } else { "broad-deep" }
+Write-Host "Native scan ($scanMode); application footprints are not counted as cleanup capacity." -ForegroundColor DarkGray
 
 try {
     Initialize-NativeFileScanner
@@ -14,15 +16,6 @@ try {
     Write-Host "  Native scanner unavailable: $($_.Exception.Message)" -ForegroundColor Red
     return
 }
-
-$scanRoots = @(
-    $env:LOCALAPPDATA,
-    $env:APPDATA,
-    ${env:ProgramFiles(x86)},
-    $env:ProgramFiles
-) | Where-Object {
-    $_ -and (Test-Path -LiteralPath $_ -PathType Container -ErrorAction SilentlyContinue)
-} | Select-Object -Unique
 
 $exclusions = @(
     "C:\Program Files\WindowsApps",
@@ -34,16 +27,116 @@ $expandContainers = @(
     "Tencent"
 )
 
+$scanRoots = @()
+$exactCandidates = @()
+$candidateSources = [ordered]@{
+    registry = 0
+    configured = 0
+    containers = 0
+}
+
+if ($fastMode) {
+    $candidateSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $candidateLabels = @{}
+    $broadRoots = @(
+        "C:\",
+        $env:SystemRoot,
+        (Join-Path $env:SystemRoot "System32"),
+        (Join-Path $env:SystemRoot "SysWOW64"),
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:ProgramData,
+        $env:LOCALAPPDATA,
+        $env:APPDATA,
+        $env:USERPROFILE
+    ) | Where-Object { $_ } | ForEach-Object {
+        try { [IO.Path]::GetFullPath($_).TrimEnd('\') } catch { $_.TrimEnd('\') }
+    }
+    $excludedCandidateTrees = @(
+        $env:SystemRoot,
+        (Join-Path $env:ProgramData "Package Cache"),
+        (Join-Path $env:LOCALAPPDATA "Package Cache")
+    ) | Where-Object { $_ } | ForEach-Object {
+        try { [IO.Path]::GetFullPath($_).TrimEnd('\') } catch { $_.TrimEnd('\') }
+    }
+
+    function Add-RuntimeCandidate {
+        param([string]$Path, [string]$Source, [string]$Label = "")
+        if ([string]::IsNullOrWhiteSpace($Path)) { return }
+        $expanded = [Environment]::ExpandEnvironmentVariables($Path).Trim().Trim('"')
+        try { $expanded = [IO.Path]::GetFullPath($expanded).TrimEnd('\') } catch { $expanded = $expanded.TrimEnd('\') }
+        if ([IO.Path]::GetPathRoot($expanded) -ne "C:\") { return }
+        if ($broadRoots -contains $expanded) { return }
+        foreach ($excludedTree in $excludedCandidateTrees) {
+            if ($expanded -eq $excludedTree -or $expanded.StartsWith($excludedTree + "\", [StringComparison]::OrdinalIgnoreCase)) { return }
+        }
+        if ($candidateSet.Add($expanded)) { $candidateSources[$Source]++ }
+        if ($Label) { $candidateLabels[$expanded] = $Label }
+    }
+
+    foreach ($entry in @(Get-UninstallRegistryEntries)) {
+        if ([string]::IsNullOrWhiteSpace([string]$entry.DisplayName)) { continue }
+        Add-RuntimeCandidate -Path (Resolve-UninstallInstallFolder -Entry $entry -NoExistenceCheck -InstallLocationOnly) -Source "registry" -Label ([string]$entry.DisplayName).Trim()
+    }
+
+    $runtimeConfigPath = Join-Path (Get-SkillRoot) "extensions\runtime-inventory.json"
+    if (Test-Path -LiteralPath $runtimeConfigPath -PathType Leaf -ErrorAction SilentlyContinue) {
+        try {
+            $runtimeConfig = Get-Content -LiteralPath $runtimeConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($path in @($runtimeConfig.exact_paths)) {
+                Add-RuntimeCandidate -Path ([string]$path) -Source "configured"
+            }
+            foreach ($container in @($runtimeConfig.candidate_containers)) {
+                $containerPath = [Environment]::ExpandEnvironmentVariables([string]$container)
+                if (-not (Test-Path -LiteralPath $containerPath -PathType Container -ErrorAction SilentlyContinue)) { continue }
+                foreach ($child in @(Get-ChildItem -LiteralPath $containerPath -Directory -Force -ErrorAction SilentlyContinue)) {
+                    Add-RuntimeCandidate -Path $child.FullName -Source "containers"
+                }
+            }
+        } catch {
+            Write-Host "  Runtime inventory config could not be read: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+    $allCandidates = @($candidateSet)
+    $exactCandidates = @(
+        foreach ($candidate in $allCandidates) {
+            $hasParent = $false
+            foreach ($other in $allCandidates) {
+                if ($candidate -eq $other) { continue }
+                if ($candidate.StartsWith($other.TrimEnd('\') + "\", [StringComparison]::OrdinalIgnoreCase)) {
+                    $hasParent = $true
+                    break
+                }
+            }
+            if (-not $hasParent) { $candidate }
+        }
+    )
+    $candidateSources["deduplicated"] = $allCandidates.Count - $exactCandidates.Count
+    Write-Host "  Fast coverage: uninstall install roots + configured runtime roots; use full J for broad AppData discovery." -ForegroundColor DarkGray
+} else {
+    $candidateLabels = @{}
+    $scanRoots = @(
+        $env:LOCALAPPDATA,
+        $env:APPDATA,
+        ${env:ProgramFiles(x86)},
+        $env:ProgramFiles
+    ) | Where-Object {
+        $_ -and (Test-Path -LiteralPath $_ -PathType Container -ErrorAction SilentlyContinue)
+    } | Select-Object -Unique
+}
+
 $scan = [CleanSight.NativeFileScanner]::ScanRuntimeApps(
     [string[]]$scanRoots,
     [string[]]$exclusions,
     [string[]]$expandContainers,
+    [string[]]$exactCandidates,
     4
 )
 $apps = @($scan.Apps | Sort-Object TotalBytes -Descending)
 
 function Get-AppIdentity {
     param([object]$App)
+    if ($candidateLabels.ContainsKey($App.Path)) { return [string]$candidateLabels[$App.Path] }
     $packageJson = Join-Path $App.Path "package.json"
     if (Test-Path -LiteralPath $packageJson -PathType Leaf -ErrorAction SilentlyContinue) {
         try {
@@ -104,6 +197,9 @@ $Global:CDriveScannerMetadata["J"] = @{
     skipped_directories = [int64]$scan.SkippedDirectories
     findings = $apps.Count
     expanded_containers = @($expandContainers)
+    mode = $scanMode
+    coverage = if ($fastMode) { "focused install/runtime roots; broad AppData discovery deferred to full J" } else { "broad immediate application roots" }
+    candidate_sources = $candidateSources
     accounting = "inventory-only"
 }
 

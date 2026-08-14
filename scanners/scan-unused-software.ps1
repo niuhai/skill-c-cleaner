@@ -7,15 +7,13 @@ if (-not (Get-Command "Write-ScanResult" -ErrorAction SilentlyContinue)) {
 
 Write-Host "===== U: installed software candidates =====" -ForegroundColor Cyan
 Write-Host "This is a candidate list, not proof that software is unused." -ForegroundColor Yellow
+$uScanWatch = [Diagnostics.Stopwatch]::StartNew()
+$fastMode = [bool]$Global:CDriveFastMode
 
 $oldDays = 180
 $minimumBytes = 200MB
 $largeWithoutDateBytes = 1GB
-$uninstallRoots = @(
-    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-    "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
-    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
-)
+$cutoff = (Get-Date).AddDays(-$oldDays)
 
 function Convert-EstimatedBytes {
     param($Value)
@@ -30,30 +28,10 @@ function Convert-EstimatedBytes {
 function Convert-InstallDate {
     param([string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
-    try {
-        if ($Value -match '^\d{8}$') {
-            return [datetime]::ParseExact($Value, "yyyyMMdd", [Globalization.CultureInfo]::InvariantCulture)
-        }
-    } catch {}
+    foreach ($format in @("yyyyMMdd", "yyyy/M/d", "yyyy/MM/dd", "yyyy-M-d", "yyyy-MM-dd", "yyyy.M.d", "yyyy.MM.dd")) {
+        try { return [datetime]::ParseExact($Value.Trim(), $format, [Globalization.CultureInfo]::InvariantCulture) } catch {}
+    }
     return $null
-}
-
-function Resolve-InstallFolder {
-    param($Entry)
-    $location = [string]$Entry.InstallLocation
-    if (-not [string]::IsNullOrWhiteSpace($location)) {
-        $location = $location.Trim().Trim('"')
-        if (Test-Path -LiteralPath $location -PathType Container -ErrorAction SilentlyContinue) { return $location }
-    }
-
-    $icon = [string]$Entry.DisplayIcon
-    if (-not [string]::IsNullOrWhiteSpace($icon)) {
-        $icon = $icon.Split(',')[0].Trim().Trim('"')
-        if (Test-Path -LiteralPath $icon -PathType Leaf -ErrorAction SilentlyContinue) {
-            return (Split-Path -Parent $icon)
-        }
-    }
-    return ""
 }
 
 function Test-SystemSoftwareEntry {
@@ -65,10 +43,11 @@ function Test-SystemSoftwareEntry {
     return $name -match '(?i)(Windows Update|Update for|Security Update|Visual C\+\+|\.NET|ASP\.NET|WebView2|Edge Update|Runtime|Redistributable|KB\d+)'
 }
 
-$rawEntries = @()
-foreach ($root in $uninstallRoots) {
-    $rawEntries += @(Get-ItemProperty -Path $root -ErrorAction SilentlyContinue)
-}
+$rawEntries = @(Get-UninstallRegistryEntries)
+$folderSizesMeasured = 0
+$folderSizesSkippedFast = 0
+$folderSizesSkippedNonC = 0
+$folderSizesSkippedRecent = 0
 
 $records = @(
     $rawEntries |
@@ -78,26 +57,43 @@ $records = @(
         } |
         ForEach-Object {
             $bytes = Convert-EstimatedBytes $_.EstimatedSize
-            $installFolder = Resolve-InstallFolder $_
-            if ($bytes -le 0 -and $installFolder) {
-                $folder = Get-FolderSizeFast $installFolder
-                if ($folder.Found) { $bytes = [int64]$folder.Size }
-            }
             $date = Convert-InstallDate ([string]$_.InstallDate)
+            $installFolder = Resolve-UninstallInstallFolder -Entry $_ -NoExistenceCheck:$fastMode -InstallLocationOnly:$fastMode
+            $sizeSource = if ($bytes -gt 0) { "registry-estimate" } else { "unreported" }
+            if ($bytes -le 0 -and $installFolder) {
+                $isCInstall = $false
+                try { $isCInstall = ([IO.Path]::GetPathRoot($installFolder) -eq "C:\") } catch {}
+                $worthMeasuring = (-not $date) -or ($date -lt $cutoff)
+                if ($fastMode) {
+                    $folderSizesSkippedFast++
+                } elseif (-not $isCInstall) {
+                    $folderSizesSkippedNonC++
+                } elseif (-not $worthMeasuring) {
+                    $folderSizesSkippedRecent++
+                } else {
+                    $folder = Get-FolderSizeFast $installFolder
+                    $folderSizesMeasured++
+                    if ($folder.Found) {
+                        $bytes = [int64]$folder.Size
+                        $sizeSource = "measured-$($folder.Status)"
+                    }
+                }
+            }
             [pscustomobject]@{
                 Name = ([string]$_.DisplayName).Trim()
                 Publisher = ([string]$_.Publisher).Trim()
                 Bytes = $bytes
+                SizeSource = $sizeSource
                 InstallDate = $date
                 InstallFolder = $installFolder
                 RegistryPath = [string]$_.PSPath
+                RegistryEntry = $_
             }
         } |
         Group-Object { "$($_.Name)|$($_.Publisher)" } |
         ForEach-Object { $_.Group | Sort-Object Bytes -Descending | Select-Object -First 1 }
 )
 
-$cutoff = (Get-Date).AddDays(-$oldDays)
 $candidates = @(
     $records |
         Where-Object {
@@ -108,13 +104,22 @@ $candidates = @(
         } |
         ForEach-Object {
             $isOld = $_.InstallDate -and $_.InstallDate -lt $cutoff
-            $reason = if ($isOld) { "install date is older than $oldDays days" } else { "large entry with no install date" }
+            $resolvedFolder = $_.InstallFolder
+            if ($fastMode -and -not $resolvedFolder) {
+                $resolvedFolder = Resolve-UninstallInstallFolder -Entry $_.RegistryEntry -TrustDisplayIconPath
+            }
+            $reason = if ($isOld) {
+                "install date is older than $oldDays days"
+            } else {
+                "large entry with no install date"
+            }
             [pscustomobject]@{
                 Name = $_.Name
                 Publisher = $_.Publisher
                 Bytes = $_.Bytes
+                SizeSource = $_.SizeSource
                 InstallDate = $_.InstallDate
-                InstallFolder = $_.InstallFolder
+                InstallFolder = $resolvedFolder
                 RegistryPath = $_.RegistryPath
                 Reason = $reason
             }
@@ -131,7 +136,8 @@ if ($candidates.Count -eq 0) {
         $installText = if ($app.InstallDate) { $app.InstallDate.ToString("yyyy-MM-dd") } else { "unknown" }
         $publisherText = if ($app.Publisher) { $app.Publisher } else { "unknown publisher" }
         $pathText = if ($app.InstallFolder) { $app.InstallFolder } else { $app.RegistryPath }
-        $note = "Publisher=$publisherText; install_date=$installText; evidence=$($app.Reason); last-use time is not reliable in uninstall registry"
+        $driveText = if ($app.InstallFolder -match '^(?<drive>[A-Za-z]):') { $Matches['drive'].ToUpperInvariant() } else { "unknown" }
+        $note = "Publisher=$publisherText; install_date=$installText; size_source=$($app.SizeSource); install_drive=$driveText; evidence=$($app.Reason); last-use time is not reliable in uninstall registry"
         Write-InventoryResult -Category "U-unused-software" -Name $app.Name -Size $app.Bytes `
             -Path $pathText -Kind "software-candidate" `
             -Evidence "$note; manual confirmation required; uninstalling may free the install footprint, not necessarily C drive space"
@@ -139,4 +145,18 @@ if ($candidates.Count -eq 0) {
 }
 
 Write-Host "  Store apps under WindowsApps may require an administrator read-only scan." -ForegroundColor DarkGray
+$uScanWatch.Stop()
+if ($null -eq $Global:CDriveScannerMetadata) { $Global:CDriveScannerMetadata = @{} }
+$Global:CDriveScannerMetadata["U"] = @{
+    elapsed_seconds = [math]::Round($uScanWatch.Elapsed.TotalSeconds, 3)
+    mode = if ($fastMode) { "registry-fast" } else { "c-drive-measured" }
+    registry_entries = $rawEntries.Count
+    normalized_records = $records.Count
+    candidates = $candidates.Count
+    folder_sizes_measured = $folderSizesMeasured
+    folder_sizes_skipped_fast = $folderSizesSkippedFast
+    folder_sizes_skipped_non_c = $folderSizesSkippedNonC
+    folder_sizes_skipped_recent = $folderSizesSkippedRecent
+    accounting = "inventory-only"
+}
 Write-Host ""

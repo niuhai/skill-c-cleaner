@@ -368,3 +368,16 @@
 | 安全边界 | 所有基准均只读；未删除、移动或修改用户/系统源数据 |
 
 已生成并验证 JSON 报告，包含 `telemetry`、`scanner_metadata`、`deduplicated_findings` 和测量缓存统计。
+
+## 测试批次 14：v6.6.0 定向快速扫描与 junction 安全（2026-08-14）
+
+| 验证项 | 结果 |
+|---|---|
+| PowerShell / JSON / C# | 49 个本地 PowerShell 文件语法通过；9 个受控 JSON 配置解析通过；NativeFileScanner 动态编译通过 |
+| Fast 全链路 | 16 类、9.5-11.7 秒、无失败；JSON telemetry 和 scanner metadata 完整 |
+| J 等价结果 | focused J：17,613 文件、8 个运行时根；broad J：383,651 文件、8 个运行时根、2 个跳过目录 |
+| VM | 通过 CIM 批量映射识别 C/D/E 同属 Disk 0；类别耗时约 0.6-0.7 秒 |
+| U | Fast 复用 J 的卸载注册表，不测安装目录；full 仅补测 6 个 C 盘路径并跳过 11 个非 C 路径 |
+| 原生目录测量 | Windows Temp、用户 Temp、WPS 与 robocopy `/L /XJ` 对比一致；活动文件造成的 61 字节差异属于扫描时点波动 |
+| junction 边界 | `AppData\Roaming\Qoder` 指向 `D:\CacheRedirect\Qoder`；根及子路径均标记 `partial`、C 盘字节为 0，O 类与清理预览不沿链接 |
+| 安全性 | 全部验证只读；未删除、移动或修改用户/系统源数据 |

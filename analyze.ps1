@@ -10,7 +10,7 @@ $SkillRoot = Split-Path -Parent $PSCommandPath
 if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
 . (Join-Path $SkillRoot "_common.ps1")
 
-$VERSION = "6.5.0"
+$VERSION = "6.6.0"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 $Global:CDriveInventory = [System.Collections.ArrayList]::new()
@@ -20,6 +20,7 @@ $Global:CDriveMeasurementCache = @{}
 $Global:CDriveMeasurementCacheHits = 0
 $Global:CDriveMeasurementCacheMisses = 0
 $Global:CDriveMeasurementCacheEnabled = $true
+$Global:CDriveUninstallRegistryEntries = $null
 $Global:CDriveFastMode = [bool]$Fast
 $Global:CDriveNativePathTotals = @()
 $Global:CDriveNativePathTotalsMetadata = $null

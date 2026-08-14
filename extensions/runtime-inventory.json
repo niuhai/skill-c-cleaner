@@ -1,0 +1,18 @@
+{
+  "_schema": "CleanSight runtime inventory v1",
+  "_description": "Fast-mode runtime roots. Registry install locations are added automatically; full mode still performs broad discovery.",
+  "exact_paths": [
+    "%PROGRAMFILES(X86)%\\Microsoft\\Edge",
+    "%PROGRAMFILES(X86)%\\Microsoft\\EdgeCore",
+    "%PROGRAMFILES(X86)%\\Microsoft\\EdgeWebView",
+    "%PROGRAMFILES(X86)%\\SogouInput",
+    "%PROGRAMFILES%\\WPS Office",
+    "%LOCALAPPDATA%\\Google\\Chrome\\Application",
+    "%LOCALAPPDATA%\\Microsoft\\Edge\\Application",
+    "%LOCALAPPDATA%\\ms-playwright",
+    "%APPDATA%\\Tencent\\xwechat"
+  ],
+  "candidate_containers": [
+    "%LOCALAPPDATA%\\Programs"
+  ]
+}

@@ -6,6 +6,7 @@ if (-not (Get-Command "Get-FolderSizeFast" -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host "`n===== Virtual memory assessment =====" -ForegroundColor Cyan
+$vmScanWatch = [Diagnostics.Stopwatch]::StartNew()
 
 function Format-BytesGB {
     param([double]$Bytes)
@@ -102,6 +103,29 @@ function Get-CrashDumpMode {
 
 function Get-DriveSnapshot {
     $snapshots = @()
+    $partitionByDrive = @{}
+    $diskByNumber = @{}
+    $storageWatch = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        foreach ($association in @(Get-CimInstance -ClassName Win32_LogicalDiskToPartition -ErrorAction Stop)) {
+            $driveId = [string]$association.Dependent.DeviceID
+            $partitionId = [string]$association.Antecedent.DeviceID
+            $diskMatch = [regex]::Match($partitionId, '(?i)^Disk #(?<disk>\d+),')
+            if ($driveId -match '^[A-Za-z]:$' -and $diskMatch.Success) {
+                $partitionByDrive[$driveId.Substring(0, 1).ToUpperInvariant()] = [pscustomobject]@{
+                    DiskNumber = [int]$diskMatch.Groups['disk'].Value
+                }
+            }
+        }
+    } catch {}
+    try {
+        foreach ($disk in @(Get-CimInstance -ClassName Win32_DiskDrive -ErrorAction Stop)) {
+            $diskByNumber[[int]$disk.Index] = $disk
+        }
+    } catch {}
+    $storageWatch.Stop()
+    $script:VMStorageProbeSeconds = [math]::Round($storageWatch.Elapsed.TotalSeconds, 3)
+
     try {
         foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
             if (-not $drive.IsReady -or $drive.DriveType -ne [System.IO.DriveType]::Fixed) { continue }
@@ -114,11 +138,15 @@ function Get-DriveSnapshot {
             $mediaType = "Unknown"
             $busType = "Unknown"
             try {
-                $partition = Get-Partition -DriveLetter $drive.Name.Substring(0, 1) -ErrorAction Stop
+                $driveLetter = $drive.Name.Substring(0, 1).ToUpperInvariant()
+                $partition = $partitionByDrive[$driveLetter]
+                if (-not $partition) { throw "partition metadata unavailable" }
                 $diskNumber = $partition.DiskNumber
-                $disk = Get-Disk -Number $diskNumber -ErrorAction Stop
+                $disk = $diskByNumber[[int]$diskNumber]
+                if (-not $disk) { throw "disk metadata unavailable" }
                 if ($disk.MediaType) { $mediaType = [string]$disk.MediaType }
-                if ($disk.BusType) { $busType = [string]$disk.BusType }
+                if ([string]$disk.Model -match '(?i)NVMe') { $busType = "NVMe" }
+                elseif ($disk.InterfaceType) { $busType = [string]$disk.InterfaceType }
             } catch {}
 
             $snapshots += [PSCustomObject]@{
@@ -293,4 +321,14 @@ $globalVMResult = [PSCustomObject]@{
 }
 
 $Global:VMAssessResult = $globalVMResult
+$vmScanWatch.Stop()
+if ($null -eq $Global:CDriveScannerMetadata) { $Global:CDriveScannerMetadata = @{} }
+$Global:CDriveScannerMetadata["VM"] = @{
+    elapsed_seconds = [math]::Round($vmScanWatch.Elapsed.TotalSeconds, 3)
+    storage_probe = "bulk Win32_LogicalDiskToPartition + Win32_DiskDrive"
+    storage_probe_seconds = [double]$script:VMStorageProbeSeconds
+    fixed_drives = $driveSnapshots.Count
+    pagefiles = $pagefiles.Count
+    accounting = "assessment-only"
+}
 Write-Host ""

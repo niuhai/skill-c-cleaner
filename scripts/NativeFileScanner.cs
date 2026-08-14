@@ -103,6 +103,19 @@ namespace CleanSight
         }
     }
 
+    public sealed class FastPathMeasurementResult
+    {
+        public string Path { get; set; }
+        public bool Exists { get; set; }
+        public bool IsDirectory { get; set; }
+        public bool RootAccessible { get; set; }
+        public bool ReparsePoint { get; set; }
+        public long Bytes { get; set; }
+        public long FileCount { get; set; }
+        public long SkippedDirectories { get; set; }
+        public double ElapsedSeconds { get; set; }
+    }
+
     internal sealed class DirectoryNode
     {
         public string Path;
@@ -234,8 +247,13 @@ namespace CleanSight
 
         public static RuntimeScanResult ScanRuntimeApps(string[] roots, string[] excludedDirectories, string[] expandContainerNames, int parallelism)
         {
+            return ScanRuntimeApps(roots, excludedDirectories, expandContainerNames, null, parallelism);
+        }
+
+        public static RuntimeScanResult ScanRuntimeApps(string[] roots, string[] excludedDirectories, string[] expandContainerNames, string[] exactCandidates, int parallelism)
+        {
             var result = new RuntimeScanResult();
-            if (roots == null || roots.Length == 0) return result;
+            if ((roots == null || roots.Length == 0) && (exactCandidates == null || exactCandidates.Length == 0)) return result;
 
             parallelism = Math.Max(1, Math.Min(parallelism, 8));
             var excluded = BuildExclusions(excludedDirectories);
@@ -248,27 +266,42 @@ namespace CleanSight
                 }
             }
             var candidates = new List<KeyValuePair<string, string>>();
-            foreach (var root in roots)
+            var seenCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (roots != null)
             {
-                if (String.IsNullOrWhiteSpace(root)) continue;
-                foreach (var directory in EnumerateImmediateDirectories(root))
+                foreach (var root in roots)
                 {
-                    if (IsExcluded(directory, excluded)) continue;
-                    var directoryName = Path.GetFileName(directory);
-                    if (!expandContainers.Contains(directoryName))
+                    if (String.IsNullOrWhiteSpace(root)) continue;
+                    foreach (var directory in EnumerateImmediateDirectories(root))
                     {
-                        candidates.Add(new KeyValuePair<string, string>(Normalize(root), directory));
-                        continue;
-                    }
+                        if (IsExcluded(directory, excluded)) continue;
+                        var directoryName = Path.GetFileName(directory);
+                        if (!expandContainers.Contains(directoryName))
+                        {
+                            AddRuntimeCandidate(candidates, seenCandidates, root, directory);
+                            continue;
+                        }
 
-                    var childCount = 0;
-                    foreach (var child in EnumerateImmediateDirectories(directory))
-                    {
-                        if (IsExcluded(child, excluded)) continue;
-                        candidates.Add(new KeyValuePair<string, string>(directory, child));
-                        childCount++;
+                        var childCount = 0;
+                        foreach (var child in EnumerateImmediateDirectories(directory))
+                        {
+                            if (IsExcluded(child, excluded)) continue;
+                            AddRuntimeCandidate(candidates, seenCandidates, directory, child);
+                            childCount++;
+                        }
+                        if (childCount == 0) AddRuntimeCandidate(candidates, seenCandidates, root, directory);
                     }
-                    if (childCount == 0) candidates.Add(new KeyValuePair<string, string>(Normalize(root), directory));
+                }
+            }
+
+            if (exactCandidates != null)
+            {
+                foreach (var candidate in exactCandidates)
+                {
+                    if (String.IsNullOrWhiteSpace(candidate)) continue;
+                    var normalized = Normalize(candidate);
+                    if (IsExcluded(normalized, excluded) || !Directory.Exists(normalized) || HasReparsePointInPath(normalized)) continue;
+                    AddRuntimeCandidate(candidates, seenCandidates, Path.GetDirectoryName(normalized), normalized);
                 }
             }
 
@@ -289,6 +322,132 @@ namespace CleanSight
             watch.Stop();
             result.ElapsedSeconds = Math.Round(watch.Elapsed.TotalSeconds, 3);
             return result;
+        }
+
+        public static FastPathMeasurementResult MeasurePath(string path)
+        {
+            var result = new FastPathMeasurementResult();
+            var watch = Stopwatch.StartNew();
+            if (String.IsNullOrWhiteSpace(path)) return result;
+
+            var normalized = Normalize(path);
+            result.Path = normalized;
+            try
+            {
+                var isFile = File.Exists(normalized);
+                var isDirectory = Directory.Exists(normalized);
+                if (!isFile && !isDirectory)
+                {
+                    watch.Stop();
+                    result.ElapsedSeconds = Math.Round(watch.Elapsed.TotalSeconds, 3);
+                    return result;
+                }
+
+                result.Exists = true;
+                result.IsDirectory = isDirectory;
+                if (HasReparsePointInPath(normalized))
+                {
+                    result.ReparsePoint = true;
+                    watch.Stop();
+                    result.ElapsedSeconds = Math.Round(watch.Elapsed.TotalSeconds, 3);
+                    return result;
+                }
+
+                if (isFile)
+                {
+                    result.RootAccessible = true;
+                    result.Bytes = new FileInfo(normalized).Length;
+                    result.FileCount = 1;
+                    watch.Stop();
+                    result.ElapsedSeconds = Math.Round(watch.Elapsed.TotalSeconds, 3);
+                    return result;
+                }
+
+                var pending = new Stack<string>();
+                pending.Push(normalized);
+                var first = true;
+                while (pending.Count > 0)
+                {
+                    var current = pending.Pop();
+                    Win32FindData data;
+                    var handle = OpenFind(current, out data);
+                    if (handle == InvalidHandleValue)
+                    {
+                        result.SkippedDirectories++;
+                        first = false;
+                        continue;
+                    }
+                    if (first) result.RootAccessible = true;
+                    first = false;
+
+                    try
+                    {
+                        do
+                        {
+                            var name = data.FileName;
+                            if (name == "." || name == "..") continue;
+                            var child = Combine(current, name);
+                            if ((data.FileAttributes & FileAttributes.Directory) != 0)
+                            {
+                                if ((data.FileAttributes & FileAttributes.ReparsePoint) == 0) pending.Push(child);
+                                continue;
+                            }
+                            result.Bytes += ((long)data.FileSizeHigh << 32) | data.FileSizeLow;
+                            result.FileCount++;
+                        }
+                        while (FindNextFileW(handle, out data));
+                    }
+                    finally
+                    {
+                        FindClose(handle);
+                    }
+                }
+            }
+            catch
+            {
+                result.SkippedDirectories++;
+            }
+
+            watch.Stop();
+            result.ElapsedSeconds = Math.Round(watch.Elapsed.TotalSeconds, 3);
+            return result;
+        }
+
+        public static FastPathMeasurementResult[] MeasurePaths(string[] paths, int parallelism)
+        {
+            if (paths == null || paths.Length == 0) return new FastPathMeasurementResult[0];
+            parallelism = Math.Max(1, Math.Min(parallelism, 8));
+            var results = new FastPathMeasurementResult[paths.Length];
+            var options = new ParallelOptions { MaxDegreeOfParallelism = parallelism };
+            Parallel.For(0, paths.Length, options, index =>
+            {
+                results[index] = MeasurePath(paths[index]);
+            });
+            return results;
+        }
+
+        private static bool HasReparsePointInPath(string path)
+        {
+            var current = path;
+            while (!String.IsNullOrWhiteSpace(current))
+            {
+                try
+                {
+                    if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) return true;
+                }
+                catch { }
+                var parent = Path.GetDirectoryName(current);
+                if (String.IsNullOrWhiteSpace(parent) || parent.Equals(current, StringComparison.OrdinalIgnoreCase)) break;
+                current = parent;
+            }
+            return false;
+        }
+
+        private static void AddRuntimeCandidate(List<KeyValuePair<string, string>> candidates, HashSet<string> seenCandidates, string root, string candidate)
+        {
+            var normalized = Normalize(candidate);
+            if (!seenCandidates.Add(normalized)) return;
+            candidates.Add(new KeyValuePair<string, string>(Normalize(root), normalized));
         }
 
         private static SingleFileScanResult ScanLargeFilesSingle(FastFileScanSpec spec, int topN)

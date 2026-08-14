@@ -144,3 +144,15 @@ The new scanner is still an on-demand scan, but it now completes on this machine
 | `analyze.ps1 -Fast` | 153.6 s | 26.6 s | 16 categories, JSON report, no scanner failures |
 
 The ranges reflect Windows filesystem cache and active application churn. Coverage and inaccessible counts are retained so a faster result cannot silently claim higher confidence.
+
+## v6.6.0 — focused fast path and native measurements (2026-08-14)
+
+| Mode | v6.5.0 baseline | v6.6.0 measured | Evidence |
+|---|---:|---:|---|
+| `analyze.ps1 -Fast` | 26.6 s warm; 45.2 s cold observation | 9.5-11.7 s | 16 categories, JSON output, no scanner failures |
+| J focused runtime inventory | 21.4 s before focused mode | 0.6 s native traversal; 1.9 s category | 17,613 files, same 8 findings as broad J |
+| J broad runtime inventory | 21.4 s class | 22.1 s native traversal | 383,651 files, 247 candidates, 8 findings, 2 skipped directories |
+| VM assessment | 5.7 s | 0.6-0.7 s | one CIM association/disk batch for C/D/E |
+| O targeted measurement | 2.3-3.8 s | 0.8 s | four-way native batch; redirected Qoder tree excluded |
+
+The fast path is explicitly partial discovery, not a replacement for broad J. Reparse-point ancestry is treated as a volume-accounting boundary so D/E targets cannot inflate C reclaim estimates.
