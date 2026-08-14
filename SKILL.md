@@ -27,6 +27,7 @@ description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实
 - 运行 `.\track-growth.ps1 -Mode compare -Record` 建立层级化 v2 基线。只汇总互不重叠的 `coverage` 根；`detail` 只归因，不与父目录相加。
 - 定向清理执行后读取清理会话给出的 SessionId，并在 5 分钟、1 小时、24 小时后运行 `.\track-regeneration.ps1 -Mode check -SessionId <id>`。
 - 运行 `.\analyze.ps1 -Categories "WU"` 检查 `$WinREAgent`、Windows Update 下载、Delivery Optimization 和待重启信号。
+- 管理员 PowerShell 中运行 `.\analyze.ps1 -Categories "AD"`，只读核算 VSS、WinSxS、WindowsApps、Installer、DriverStore 和 Reserved Storage；这些结果只进入 inventory，不计为可清理额度。详细边界见 [`references/admin-deep-accounting.md`](references/admin-deep-accounting.md)。
 - 详细规则见 [`references/space-accounting-and-regeneration.md`](references/space-accounting-and-regeneration.md)。
 
 ## 四件套迭代闭环
@@ -107,7 +108,7 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 .\analyze.ps1 -OutputFormat markdown                   # 生成 Markdown 报告
 .\analyze.ps1 -OutputFormat json                       # JSON 格式
 .\analyze.ps1 -Categories "C,D"                        # 只扫描开发缓存+浏览器
-.\analyze.ps1 -Fast                                     # 快速证据集；GR 读取带时间戳快照，跳过 F/H/MX/SA
+.\analyze.ps1 -Fast                                     # 快速证据集；GR 读取带时间戳快照，跳过 F/H/MX/AD/SA
 .\analyze.ps1 -Categories "F,GR" -RecordGrowth          # 原生全盘扫描并建立同源增长基线
 .\track-growth.ps1 -Mode compare -Record               # 无 F 结果时的 robocopy 兼容基线
 .\measure-space.ps1 -Paths "%APPDATA%\Qoder"          # 核算逻辑大小与 NTFS 分配字节
@@ -132,6 +133,7 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 | U-不常用软件候选 | scan-unused-software | 卸载注册表、安装时间、体积候选 | 只建议确认，不自动卸载 |
 | MX-C盘零碎信息 | scan-misc-space | 根目录、一级目录、散落文件、权限盲区 | 解释空间，不等于可删除 |
 | WU-Windows更新残留 | scan-windows-update-residue | WinRE/更新下载/待重启/CBS日志 | 只读，更新完成前保留 |
+| AD-管理员深度核算 | scan-admin-deep-accounting | VSS/WinSxS/WindowsApps/Installer/DriverStore/Reserved Storage | 管理员只读解释层 |
 | SA-NTFS实际占用 | scan-space-accounting | 逻辑、硬链接去重、分配字节 | 慢速按需核算 |
 
 ---
@@ -162,6 +164,7 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 3. **明确确认**: 危险操作需 `-ReallyDelete`
 4. **管理员检测**: 清理前自动检查管理员权限（v6.1.2）
 5. **永久删除提示**: 执行前显示"文件将永久删除，不经过回收站"（v6.1.2）
+6. **统一删除门禁**: 所有正式 cleaner 在删除前校验允许根目录、C 盘边界、受保护根和任意祖先重解析点；无门禁参数时拒绝执行（v6.7.0）
 
 ---
 
@@ -173,8 +176,8 @@ c-drive-cleaner/
 ├── _common.ps1                 ← 公共模块（性能+统一接口）
 ├── analyze.ps1                 ← 一键入口（console/markdown/json）
 │
-├── scanners/   (类别只读扫描，含 GR/U/MX/WU/SA)
-├── cleaners/   (3个清理: safe/deep/dev-caches)
+├── scanners/   (类别只读扫描，含 GR/U/MX/WU/AD/SA)
+├── cleaners/   (5个清理: safe/deep/dev-caches/apps/targeted)
 ├── migrators/  (3个迁移: appdata/dev-caches/wsl-docker)
 ├── extensions/
 │   ├── app-signatures.json     ← 100+ 应用签名（14类别）
@@ -301,7 +304,15 @@ c-drive-cleaner/
 - VM maps all drive letters through bulk CIM association queries. U reuses the registry inventory and avoids non-C fallback traversal.
 - Measured on this machine: `-Fast` completed 16 categories in 9.5 seconds; focused J enumerated 17,613 files in 0.6 seconds, while broad J remained available and enumerated 383,651 files in 22.1 seconds.
 
-*CleanSight v6.6.0 — AI Disk Health Advisor*
+## v6.7.0 global planning, cleanup guard, and admin accounting note
+
+- The analyzer resolves all selected signature and multi-version targets first, measures cache misses through one bounded native batch, and seeds the shared cache. Scanner code still owns interpretation; the planner only removes repeated filesystem walks.
+- Every maintained cleaner now passes through one fail-closed deletion gate. It rejects relative paths, drive/system/profile roots, targets outside caller-declared roots, non-C volumes, and any target whose ancestry contains a junction, symlink, or mount point.
+- `clean-apps` executes the exact measured `sub_cleanable` paths; a cache-only signature must never fall through to deleting the whole application-data root.
+- `AD` adds administrator-only, read-only accounting for VSS, WinSxS, WindowsApps, Installer, DriverStore, and Reserved Storage. Protected-store values remain inventory-only.
+- Measured on this machine: `-Fast` completed 16 categories in 5.7-5.9 seconds; the planner seeded 88 unique paths and all 91 downstream logical measurements were cache hits.
+
+*CleanSight v6.7.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
 ## 虚拟内存强化规则（VM）
 

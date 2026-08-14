@@ -53,7 +53,7 @@ function Safe-Clean {
     Write-Host "$Description : $sizeStr" -ForegroundColor Green
     Write-Host "  路径: $Path" -ForegroundColor DarkGray
     if (-not $WhatIf) {
-        $ok = Remove-Directory -Path $Path -ShowProgress
+        $ok = Remove-Directory -Path $Path -AllowedRoots @($Path) -ShowProgress
         if ($ok) { return $r.Size } else { return 0 }
     }
     return $r.Size
@@ -78,7 +78,9 @@ if (Test-Path $thumbPath) {
     Write-Host "[3/7] 缩略图缓存: ${thumbMB} MB" -ForegroundColor Green
     if (-not $WhatIf -and $thumbFiles) {
         Write-Host "  删除中..." -NoNewline -ForegroundColor DarkGray
-        $thumbFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+        foreach ($thumbFile in @($thumbFiles)) {
+            [void](Remove-SafeFile -Path $thumbFile.FullName -AllowedRoots @($thumbPath))
+        }
         Write-Host " 完成" -ForegroundColor Green
     }
     $totalFreed += [long]$thumbSize

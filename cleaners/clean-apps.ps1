@@ -92,7 +92,7 @@ function Test-AppRunning {
 }
 
 function Clean-Directory {
-    param([string]$Path, [string]$Label, [bool]$Preview)
+    param([string]$Path, [string]$AllowedRoot, [string]$Label, [bool]$Preview)
     if (-not (Test-Path $Path -ErrorAction SilentlyContinue)) { return 0 }
     $r = Get-FolderSizeFast $Path
     if (-not $r.Found -or $r.Size -eq 0) { return 0 }
@@ -100,13 +100,37 @@ function Clean-Directory {
     $sizeStr = if ($sizeMB -ge 1024) { "$([math]::Round($sizeMB/1024,2)) GB" } else { "$sizeMB MB" }
     Write-Host "   $Label : $sizeStr" -NoNewline -ForegroundColor DarkGray
     if (-not $Preview) {
-        $ok = Remove-Directory -Path $Path -ShowProgress
+        $ok = Remove-Directory -Path $Path -AllowedRoots @($AllowedRoot) -ShowProgress
         if ($ok) { return $r.Size }
         Write-Host "   跳过" -ForegroundColor Yellow
         return 0
     }
     Write-Host " (将清理)" -ForegroundColor Yellow
     return $r.Size
+}
+
+function Clean-ExactPath {
+    param([string]$Path, [string]$Label, [bool]$Preview)
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $item) { return 0 }
+    if ($item.PSIsContainer) {
+        return (Clean-Directory -Path $item.FullName -AllowedRoot $item.FullName -Label $Label -Preview:$Preview)
+    }
+    $bytes = [int64]$item.Length
+    if ($bytes -le 0) { return 0 }
+    $sizeMB = [math]::Round($bytes / 1MB, 2)
+    Write-Host "   $Label : $sizeMB MB" -NoNewline -ForegroundColor DarkGray
+    if ($Preview) {
+        Write-Host " (将清理)" -ForegroundColor Yellow
+        return $bytes
+    }
+    $ok = Remove-SafeFile -Path $item.FullName -AllowedRoots @($item.FullName)
+    if ($ok) {
+        Write-Host " 完成" -ForegroundColor Green
+        return $bytes
+    }
+    Write-Host " 跳过" -ForegroundColor Yellow
+    return 0
 }
 
 # ----- 主流程 -----
@@ -169,28 +193,17 @@ foreach ($item in $allApps) {
 
     $appFreed = 0L
 
-    if ($app.sub_paths -and $app.sub_cleanable) {
-        $subsToClean = @()
-        if ($app.sub_cleanable -is [string]) {
-            $subsToClean = ($app.sub_cleanable -split ",") | ForEach-Object { $_.Trim() }
-            $availableSubs = @($app.sub_paths)
-            foreach ($subName in $subsToClean) {
-                $matched = $availableSubs | Where-Object { $_ -like "*$subName*" -or $subName -like "*$_*" }
-                if ($matched) { $subsToClean += $matched }
-            }
-        } else {
-            $subsToClean = @($app.sub_paths)
-        }
-        # 通过 sub_paths + 匹配到的 sub_cleanable 来清理
-        $uniqueSubs = $subsToClean | Select-Object -Unique
-        foreach ($sub in $uniqueSubs) {
-            $fullPath = Join-Path $result.Path $sub
-            $freed = Clean-Directory -Path $fullPath -Label $sub -Preview:$WhatIf
-            $appFreed += $freed
+    if ($app.sub_cleanable) {
+        # Test-AppSignature already resolves sub_paths/sub_cleanable (including
+        # wildcards) to exact measured paths. Consume that evidence directly so
+        # a cache-only signature can never fall through to deleting the app root.
+        foreach ($measurement in @($result.Measurements)) {
+            $label = Split-Path -Leaf ([string]$measurement.Path)
+            $appFreed += Clean-ExactPath -Path ([string]$measurement.Path) -Label $label -Preview:$WhatIf
         }
     } elseif ($app.cleanable -eq $true) {
         if (-not $WhatIf) {
-            $ok = Remove-Directory -Path $result.Path -ShowProgress
+            $ok = Remove-Directory -Path $result.Path -AllowedRoots @($result.Path) -ShowProgress
             if ($ok) {
                 $appFreed = $result.Size
             }
@@ -227,12 +240,17 @@ foreach ($app in @($customApps)) {
     Write-Host "[自定义] $($app.name) — $([math]::Round($sizeMB/1024,2)) GB" -ForegroundColor Green
     Write-Host "   路径: $($result.Path)" -ForegroundColor DarkGray
 
-    if (-not $WhatIf) {
-        $ok = Remove-Directory -Path $result.Path -ShowProgress
-        if ($ok) {
-            $totalFreed += $result.Size
-            $cleanedCount++
+    if ($app.sub_cleanable) {
+        $customFreed = 0L
+        foreach ($measurement in @($result.Measurements)) {
+            $label = Split-Path -Leaf ([string]$measurement.Path)
+            $customFreed += Clean-ExactPath -Path ([string]$measurement.Path) -Label $label -Preview:$WhatIf
         }
+        $totalFreed += $customFreed
+        if ($customFreed -gt 0) { $cleanedCount++ }
+    } elseif (-not $WhatIf) {
+        $ok = Remove-Directory -Path $result.Path -AllowedRoots @($result.Path) -ShowProgress
+        if ($ok) { $totalFreed += $result.Size; $cleanedCount++ }
     } else {
         Write-Host "   (将清理)" -ForegroundColor Yellow
         $totalFreed += $result.Size

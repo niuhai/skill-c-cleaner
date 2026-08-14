@@ -97,6 +97,84 @@ function Initialize-NativeFileScanner {
     Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
 }
 
+function Get-MeasurementCacheKey {
+    param([Parameter(Mandatory=$true)][string]$Path)
+    try { return ([IO.Path]::GetFullPath($Path)).TrimEnd('\').ToLowerInvariant() }
+    catch { return $Path.Trim().ToLowerInvariant() }
+}
+
+function Convert-NativePathMeasurement {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][object]$NativeMeasurement
+    )
+    if (-not $NativeMeasurement.Exists) {
+        return [pscustomobject]@{
+            Path = $Path; Status = "missing"; Bytes = [int64]0; FileCount = [int64]0
+            Evidence = "Win32 FindFirstFileExW; path missing or not enumerable"
+        }
+    }
+    if ($NativeMeasurement.ReparsePoint) {
+        return [pscustomobject]@{
+            Path = $Path; Status = "partial"; Bytes = [int64]0; FileCount = [int64]0
+            Evidence = "Win32 FindFirstFileExW; a reparse point exists in the path ancestry and was not followed"
+        }
+    }
+    $status = if (-not $NativeMeasurement.RootAccessible) { "inaccessible" } elseif ($NativeMeasurement.SkippedDirectories -gt 0) { "partial" } else { "ok" }
+    return [pscustomobject]@{
+        Path = $Path
+        Status = $status
+        Bytes = [int64]$NativeMeasurement.Bytes
+        FileCount = [int64]$NativeMeasurement.FileCount
+        Evidence = "Win32 FindFirstFileExW; skipped_directories=$($NativeMeasurement.SkippedDirectories); elapsed_seconds=$($NativeMeasurement.ElapsedSeconds)"
+    }
+}
+
+function Invoke-PathMeasurementPlan {
+    <# Batch-measure exact paths and seed the per-run cache before scanners execute. #>
+    param(
+        [string[]]$Paths,
+        [ValidateRange(1,8)][int]$Parallelism = 4
+    )
+
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $unique = [System.Collections.ArrayList]::new()
+    $seen = @{}
+    foreach ($path in @($Paths)) {
+        if ([string]::IsNullOrWhiteSpace([string]$path)) { continue }
+        $key = Get-MeasurementCacheKey -Path ([string]$path)
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        [void]$unique.Add([pscustomobject]@{ Path=[string]$path; Key=$key })
+    }
+
+    $misses = @($unique | Where-Object { -not $Global:CDriveMeasurementCache.ContainsKey($_.Key) })
+    $seeded = 0
+    $statusCounts = @{}
+    if ($misses.Count -gt 0) {
+        Initialize-NativeFileScanner
+        $nativeResults = [CleanSight.NativeFileScanner]::MeasurePaths([string[]]@($misses.Path), $Parallelism)
+        for ($index = 0; $index -lt $misses.Count; $index++) {
+            $measurement = Convert-NativePathMeasurement -Path $misses[$index].Path -NativeMeasurement $nativeResults[$index]
+            $Global:CDriveMeasurementCache[$misses[$index].Key] = $measurement
+            $seeded++
+            $status = [string]$measurement.Status
+            if (-not $statusCounts.ContainsKey($status)) { $statusCounts[$status] = 0 }
+            $statusCounts[$status]++
+        }
+    }
+    $watch.Stop()
+    return [pscustomobject]@{
+        Requested = @($Paths).Count
+        Unique = $unique.Count
+        CachedBefore = $unique.Count - $misses.Count
+        Seeded = $seeded
+        StatusCounts = $statusCounts
+        Parallelism = $Parallelism
+        Seconds = [math]::Round($watch.Elapsed.TotalSeconds, 3)
+    }
+}
+
 function Complete-PathLogicalMeasurement {
     param(
         [string]$CacheKey,
@@ -121,8 +199,7 @@ function Get-PathLogicalMeasurement {
         [switch]$NoCache
     )
 
-    $cacheKey = ""
-    try { $cacheKey = ([IO.Path]::GetFullPath($Path)).TrimEnd('\').ToLowerInvariant() } catch { $cacheKey = $Path.ToLowerInvariant() }
+    $cacheKey = Get-MeasurementCacheKey -Path $Path
     if ($Global:CDriveMeasurementCacheEnabled -and -not $NoCache) {
         if ($Global:CDriveMeasurementCache.ContainsKey($cacheKey)) {
             $Global:CDriveMeasurementCacheHits++
@@ -134,32 +211,7 @@ function Get-PathLogicalMeasurement {
     try {
         Initialize-NativeFileScanner
         $native = [CleanSight.NativeFileScanner]::MeasurePath($Path)
-        if (-not $native.Exists) {
-            $result = [pscustomobject]@{
-                Path = $Path
-                Status = "missing"
-                Bytes = [int64]0
-                FileCount = [int64]0
-                Evidence = "Win32 FindFirstFileExW; path missing or not enumerable"
-            }
-        } elseif ($native.ReparsePoint) {
-            $result = [pscustomobject]@{
-                Path = $Path
-                Status = "partial"
-                Bytes = [int64]0
-                FileCount = [int64]0
-                Evidence = "Win32 FindFirstFileExW; root is a reparse point and was not followed"
-            }
-        } else {
-            $status = if (-not $native.RootAccessible) { "inaccessible" } elseif ($native.SkippedDirectories -gt 0) { "partial" } else { "ok" }
-            $result = [pscustomobject]@{
-                Path = $Path
-                Status = $status
-                Bytes = [int64]$native.Bytes
-                FileCount = [int64]$native.FileCount
-                Evidence = "Win32 FindFirstFileExW; skipped_directories=$($native.SkippedDirectories); elapsed_seconds=$($native.ElapsedSeconds)"
-            }
-        }
+        $result = Convert-NativePathMeasurement -Path $Path -NativeMeasurement $native
         return (Complete-PathLogicalMeasurement -CacheKey $cacheKey -Measurement $result -NoCache:$NoCache)
     } catch {
         # Native compilation can be unavailable on constrained hosts; retain the
@@ -407,79 +459,99 @@ function Load-CustomSigs {
     } catch { return @() }
 }
 
-function Test-AppSignature {
+function Resolve-AppSignatureTargets {
+    <# Resolve detect/sub paths once so the planner and scanner use identical targets. #>
     param([PSObject]$App)
-    $found = $false
-    $totalSize = 0L
+
     $foundPath = ""
-    $measurements = [System.Collections.ArrayList]::new()
-    $seenPaths = @{}
-    foreach ($dp in $App.detect_paths) {
-        $expanded = Expand-EnvPath $dp
-        if (-not (Test-Path $expanded -ErrorAction SilentlyContinue)) { continue }
-        $found = $true
-        if (-not $foundPath) { $foundPath = $expanded }
-        $candidatePaths = [System.Collections.ArrayList]::new()
-        if ($App.sub_paths) {
-            foreach ($sub in $App.sub_paths) {
-                $subFull = Join-Path $expanded $sub
-                if ($sub -match '[*?]') {
-                    foreach ($match in @(Get-ChildItem -Path $subFull -Force -ErrorAction SilentlyContinue)) {
-                        [void]$candidatePaths.Add($match.FullName)
-                    }
-                } elseif (Test-Path -LiteralPath $subFull -ErrorAction SilentlyContinue) {
-                    [void]$candidatePaths.Add($subFull)
-                }
+    $candidates = [System.Collections.ArrayList]::new()
+    foreach ($dp in @($App.detect_paths)) {
+        $expanded = Expand-EnvPath ([string]$dp)
+        $roots = try {
+            if ($expanded -match '[*?]') {
+                @(Get-Item -Path $expanded -Force -ErrorAction Stop | Where-Object { $_.PSIsContainer })
+            } else {
+                @(Get-Item -LiteralPath $expanded -Force -ErrorAction Stop | Where-Object { $_.PSIsContainer })
             }
-        } elseif ($App.sub_cleanable) {
-            foreach ($sub in @(([string]$App.sub_cleanable) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
-                $subFull = Join-Path $expanded $sub
-                if ($sub -match '[*?]') {
-                    foreach ($match in @(Get-ChildItem -Path $subFull -Force -ErrorAction SilentlyContinue)) {
-                        [void]$candidatePaths.Add($match.FullName)
-                    }
-                } elseif (Test-Path -LiteralPath $subFull -ErrorAction SilentlyContinue) {
-                    [void]$candidatePaths.Add($subFull)
-                }
-            }
-        } else {
-            [void]$candidatePaths.Add($expanded)
-        }
+        } catch { @() }
 
-        # Keep only non-overlapping exact paths. A parent measurement already
-        # contains its descendants and must not be added twice.
-        $selected = [System.Collections.ArrayList]::new()
-        foreach ($candidate in @($candidatePaths | Sort-Object { $_.Length })) {
-            $candidateFull = ""
-            try { $candidateFull = [IO.Path]::GetFullPath([string]$candidate).TrimEnd('\') } catch { continue }
-            $covered = $false
-            foreach ($parent in @($selected)) {
-                $prefix = ([string]$parent).TrimEnd('\') + '\'
-                if ($candidateFull.Equals([string]$parent, [StringComparison]::OrdinalIgnoreCase) -or
-                    $candidateFull.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
-                    $covered = $true
-                    break
+        foreach ($rootItem in $roots) {
+            $rootPath = [string]$rootItem.FullName
+            if (-not $foundPath) { $foundPath = $rootPath }
+            $subPatterns = if ($App.sub_paths) {
+                @($App.sub_paths)
+            } elseif ($App.sub_cleanable) {
+                @(([string]$App.sub_cleanable) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            } else { @() }
+
+            if ($subPatterns.Count -eq 0) {
+                [void]$candidates.Add($rootPath)
+                continue
+            }
+            foreach ($sub in $subPatterns) {
+                $subFull = Join-Path $rootPath ([string]$sub)
+                if ([string]$sub -match '[*?]') {
+                    foreach ($match in @(try { Get-Item -Path $subFull -Force -ErrorAction Stop } catch { @() })) {
+                        [void]$candidates.Add($match.FullName)
+                    }
+                } else {
+                    $match = try { Get-Item -LiteralPath $subFull -Force -ErrorAction Stop } catch { $null }
+                    if ($match) { [void]$candidates.Add($match.FullName) }
                 }
             }
-            if (-not $covered) { [void]$selected.Add($candidateFull) }
-        }
-
-        foreach ($candidate in @($selected)) {
-            $key = $candidate.ToLowerInvariant()
-            if ($seenPaths.ContainsKey($key)) { continue }
-            $seenPaths[$key] = $true
-            $r = Get-FolderSizeFast $candidate
-            if (-not $r.Found -or $r.Size -le 0) { continue }
-            $totalSize += [int64]$r.Size
-            [void]$measurements.Add([pscustomobject]@{
-                Path = $candidate
-                Bytes = [int64]$r.Size
-                Status = $r.Status
-                Evidence = $r.Evidence
-            })
         }
     }
-    return @{ Found = $found; Size = $totalSize; Path = $foundPath; Measurements = @($measurements) }
+
+    # Keep unique non-overlapping paths. Measuring a parent and its child would
+    # double count the child's bytes in the same app finding.
+    $selected = [System.Collections.ArrayList]::new()
+    foreach ($candidate in @($candidates | Sort-Object { ([string]$_).Length })) {
+        try { $candidateFull = [IO.Path]::GetFullPath([string]$candidate).TrimEnd('\') } catch { continue }
+        $covered = $false
+        foreach ($parent in @($selected)) {
+            if ($candidateFull.Equals([string]$parent, [StringComparison]::OrdinalIgnoreCase) -or
+                $candidateFull.StartsWith(([string]$parent).TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                $covered = $true
+                break
+            }
+        }
+        if (-not $covered) { [void]$selected.Add($candidateFull) }
+    }
+    return [pscustomobject]@{ Found=[bool]$foundPath; FoundPath=$foundPath; Paths=@($selected) }
+}
+
+function Get-SignatureMeasurementPlanPaths {
+    param([string[]]$Categories)
+    $paths = [System.Collections.ArrayList]::new()
+    $apps = [System.Collections.ArrayList]::new()
+    foreach ($category in @($Categories | Select-Object -Unique)) {
+        foreach ($app in @(Load-SignatureDb -Category $category)) { [void]$apps.Add($app) }
+    }
+    foreach ($app in @(Load-CustomSigs)) { [void]$apps.Add($app) }
+    foreach ($app in @($apps)) {
+        $resolved = Resolve-AppSignatureTargets -App $app
+        foreach ($path in @($resolved.Paths)) { [void]$paths.Add($path) }
+    }
+    return @($paths)
+}
+
+function Test-AppSignature {
+    param([PSObject]$App)
+    $resolved = Resolve-AppSignatureTargets -App $App
+    $totalSize = 0L
+    $measurements = [System.Collections.ArrayList]::new()
+    foreach ($candidate in @($resolved.Paths)) {
+        $r = Get-FolderSizeFast $candidate
+        if (-not $r.Found -or $r.Size -le 0) { continue }
+        $totalSize += [int64]$r.Size
+        [void]$measurements.Add([pscustomobject]@{
+            Path = $candidate
+            Bytes = [int64]$r.Size
+            Status = $r.Status
+            Evidence = $r.Evidence
+        })
+    }
+    return @{ Found=$resolved.Found; Size=$totalSize; Path=$resolved.FoundPath; Measurements=@($measurements) }
 }
 
 function Convert-RiskLevel {
@@ -621,6 +693,107 @@ function Get-ProgressBar {
     return "$bar $pct%"
 }
 
+function Test-CleanupTargetSafety {
+    <#
+    Fail-closed deletion gate. It validates lexical containment, volume, protected
+    roots, object type, and every ancestor for junctions/symlinks/mount points.
+    #>
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string[]]$AllowedRoots,
+        [string]$ExpectedDrive = "C",
+        [ValidateSet("Any","Directory","File")][string]$TargetType = "Any"
+    )
+
+    function New-SafetyResult([bool]$safe, [string]$reason, [string]$fullPath = "") {
+        return [pscustomobject]@{ Safe=$safe; Reason=$reason; Path=$fullPath; ExpectedDrive=$ExpectedDrive }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return (New-SafetyResult $false "目标路径为空") }
+    if (-not [IO.Path]::IsPathRooted($Path)) { return (New-SafetyResult $false "拒绝相对路径: $Path") }
+    if (-not $AllowedRoots -or @($AllowedRoots).Count -eq 0) { return (New-SafetyResult $false "调用方未提供允许根目录") }
+
+    try { $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\') }
+    catch { return (New-SafetyResult $false "目标路径无法规范化: $($_.Exception.Message)") }
+
+    $pathRoot = [IO.Path]::GetPathRoot($fullPath).TrimEnd('\')
+    $expectedRoot = ([string]$ExpectedDrive).Trim().TrimEnd(':') + ':'
+    if (-not $pathRoot.Equals($expectedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        return (New-SafetyResult $false "目标位于 $pathRoot，清理器只允许 $expectedRoot" $fullPath)
+    }
+
+    $protectedRoots = @(
+        "$expectedRoot\",
+        (Join-Path "$expectedRoot\" "Windows"),
+        (Join-Path "$expectedRoot\" "Users"),
+        $env:USERPROFILE,
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:ProgramData,
+        $env:LOCALAPPDATA,
+        $env:APPDATA
+    ) | Where-Object { $_ } | ForEach-Object {
+        try { [IO.Path]::GetFullPath([string]$_).TrimEnd('\') } catch { [string]$_ }
+    }
+    foreach ($protected in $protectedRoots) {
+        if ($fullPath.Equals($protected, [StringComparison]::OrdinalIgnoreCase)) {
+            return (New-SafetyResult $false "拒绝删除受保护根目录: $protected" $fullPath)
+        }
+    }
+
+    $withinAllowedRoot = $false
+    foreach ($allowed in @($AllowedRoots)) {
+        if ([string]::IsNullOrWhiteSpace([string]$allowed) -or -not [IO.Path]::IsPathRooted([string]$allowed)) { continue }
+        try { $allowedFull = [IO.Path]::GetFullPath([string]$allowed).TrimEnd('\') } catch { continue }
+        if ($fullPath.Equals($allowedFull, [StringComparison]::OrdinalIgnoreCase) -or
+            $fullPath.StartsWith($allowedFull + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            $withinAllowedRoot = $true
+            break
+        }
+    }
+    if (-not $withinAllowedRoot) { return (New-SafetyResult $false "目标不在调用方声明的允许根目录内" $fullPath) }
+
+    try {
+        Initialize-NativeFileScanner
+        $inspection = [CleanSight.NativeFileScanner]::InspectPathSafety($fullPath)
+    } catch {
+        return (New-SafetyResult $false "原生路径安全检查不可用: $($_.Exception.Message)" $fullPath)
+    }
+    if ($inspection.Error) { return (New-SafetyResult $false "路径安全检查失败: $($inspection.Error)" $fullPath) }
+    if (-not $inspection.Exists) { return (New-SafetyResult $false "目标不存在或不可访问" $fullPath) }
+    if ($inspection.ReparsePointInAncestry) { return (New-SafetyResult $false "目标或其祖先含重解析点，拒绝跨卷/链接删除" $fullPath) }
+    if ($TargetType -eq "Directory" -and -not $inspection.IsDirectory) { return (New-SafetyResult $false "目标不是目录" $fullPath) }
+    if ($TargetType -eq "File" -and $inspection.IsDirectory) { return (New-SafetyResult $false "目标不是文件" $fullPath) }
+    return (New-SafetyResult $true "通过统一安全门禁" $fullPath)
+}
+
+function Remove-SafeFile {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][string[]]$AllowedRoots,
+        [string]$ExpectedDrive = "C"
+    )
+    try { $exists = Test-Path -LiteralPath $Path -PathType Leaf -ErrorAction Stop }
+    catch {
+        Write-Host "  ⛔ 安全门禁无法检查目标: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+    if (-not $exists) { return $true }
+    $gate = Test-CleanupTargetSafety -Path $Path -AllowedRoots $AllowedRoots -ExpectedDrive $ExpectedDrive -TargetType File
+    if (-not $gate.Safe) {
+        Write-Host "  ⛔ 安全门禁拒绝删除: $($gate.Reason)" -ForegroundColor Red
+        Write-Host "     $($gate.Path)" -ForegroundColor DarkGray
+        return $false
+    }
+    try {
+        Remove-Item -LiteralPath $gate.Path -Force -ErrorAction Stop
+        return (-not (Test-Path -LiteralPath $gate.Path -ErrorAction Stop))
+    } catch {
+        Write-Host "  ❌ 文件删除失败: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
 function Remove-Directory {
     <#
     .SYNOPSIS
@@ -639,11 +812,25 @@ function Remove-Directory {
     #>
     param(
         [string]$Path,
+        [Parameter(Mandatory=$true)][string[]]$AllowedRoots,
+        [string]$ExpectedDrive = "C",
         [switch]$ShowTimer,
         [int]$TimeoutSec = 120,
         [switch]$ShowProgress
     )
-    if (-not (Test-Path $Path -ErrorAction SilentlyContinue)) { return $true }
+    try { $exists = Test-Path -LiteralPath $Path -PathType Container -ErrorAction Stop }
+    catch {
+        Write-Host "  ⛔ 安全门禁无法检查目标: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+    if (-not $exists) { return $true }
+    $gate = Test-CleanupTargetSafety -Path $Path -AllowedRoots $AllowedRoots -ExpectedDrive $ExpectedDrive -TargetType Directory
+    if (-not $gate.Safe) {
+        Write-Host "  ⛔ 安全门禁拒绝删除: $($gate.Reason)" -ForegroundColor Red
+        Write-Host "     $($gate.Path)" -ForegroundColor DarkGray
+        return $false
+    }
+    $Path = $gate.Path
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -680,10 +867,12 @@ function Remove-Directory {
                 $elapsed = $sw.Elapsed.TotalSeconds.ToString('0.0')
                 $remainingSize = 0L
                 $remainingStr = ""
-                if (Test-Path $Path -ErrorAction SilentlyContinue) {
-                    $rr = Get-FolderSizeFast $Path
-                    if ($rr.Found) { $remainingSize = $rr.Size }
-                }
+                try {
+                    if (Test-Path -LiteralPath $Path -ErrorAction Stop) {
+                        $rr = Get-FolderSizeFast $Path
+                        if ($rr.Found) { $remainingSize = $rr.Size }
+                    }
+                } catch {}
                 if ($remainingSize -gt 0 -and $initialSize -gt 0) {
                     $cleaned = $initialSize - $remainingSize
                     $cleanedMB = [math]::Round($cleaned / 1MB, 2)
@@ -712,7 +901,8 @@ function Remove-Directory {
         $processExited = $false
     }
 
-    $stillExists = Test-Path $Path -ErrorAction SilentlyContinue
+    $stillExists = $true
+    try { $stillExists = Test-Path -LiteralPath $Path -ErrorAction Stop } catch { $stillExists = $true }
     if ($stillExists) {
         if ($ShowProgress -or $ShowTimer) {
             Write-Host " 回退(robocopy)..." -NoNewline -ForegroundColor Yellow
@@ -729,7 +919,8 @@ function Remove-Directory {
     }
 
     $sw.Stop()
-    $stillExists = Test-Path $Path -ErrorAction SilentlyContinue
+    $stillExists = $true
+    try { $stillExists = Test-Path -LiteralPath $Path -ErrorAction Stop } catch { $stillExists = $true }
     if ($ShowTimer -or $ShowProgress) {
         $elapsed = $sw.Elapsed.TotalSeconds.ToString('0.0')
         if ($ShowProgress) {

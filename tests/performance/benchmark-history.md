@@ -156,3 +156,13 @@ The ranges reflect Windows filesystem cache and active application churn. Covera
 | O targeted measurement | 2.3-3.8 s | 0.8 s | four-way native batch; redirected Qoder tree excluded |
 
 The fast path is explicitly partial discovery, not a replacement for broad J. Reparse-point ancestry is treated as a volume-accounting boundary so D/E targets cannot inflate C reclaim estimates.
+
+## v6.7.0 — global measurement plan (2026-08-14)
+
+| Mode | v6.6.0 measured | v6.7.0 measured | Evidence |
+|---|---:|---:|---|
+| `analyze.ps1 -Fast` | 9.5-11.7 s | 5.7-5.9 s analyzer / 6.3-6.4 s wall | 16 categories, JSON output, no scanner failures |
+| Logical path measurement | sequential cache misses | 1.4 s native batch | 88 unique paths seeded; 91 downstream hits / 0 misses |
+| B category after planning | included in sequential work | 0.1 s | 26 planned paths in isolated B run; 26 hits / 0 misses |
+
+The planner performs exact-path deduplication only. It does not collapse parents and children globally because scanners may require separate child evidence. Protected paths and reparse boundaries retain their original status.

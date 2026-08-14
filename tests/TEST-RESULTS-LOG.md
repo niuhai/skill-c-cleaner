@@ -381,3 +381,15 @@
 | 原生目录测量 | Windows Temp、用户 Temp、WPS 与 robocopy `/L /XJ` 对比一致；活动文件造成的 61 字节差异属于扫描时点波动 |
 | junction 边界 | `AppData\Roaming\Qoder` 指向 `D:\CacheRedirect\Qoder`；根及子路径均标记 `partial`、C 盘字节为 0，O 类与清理预览不沿链接 |
 | 安全性 | 全部验证只读；未删除、移动或修改用户/系统源数据 |
+
+## 测试批次 15：v6.7.0 全局规划、统一门禁与管理员核算（2026-08-14）
+
+| 验证项 | 结果 |
+|---|---|
+| Fast 全链路 | 16 类 5.7–5.9 秒，无 scanner failure；88 条唯一路径批量预热，后续 91 hits / 0 misses |
+| 单类 B | 0.8 秒；规划 26 条路径，B 阶段 0.1 秒，26 hits / 0 misses |
+| 删除门禁 | 正常 C 盘临时目录/文件通过；C 根、相对路径、允许根越界、Qoder junction、D 盘目标全部拒绝 |
+| cleaner 覆盖 | `clean-apps`、`clean-safe`、`clean-deep`、`clean-dev-caches`、`clean-targeted-optimization` 和定时日志清理均接入统一门禁 |
+| 应用缓存范围 | Trae CN 预览只列出 7 个精确缓存/存储子项，不再显示“清理整个目录”；Qoder junction 不进入定向预览 |
+| AD 普通权限 | 输出 Reserved Storage 策略线索和 `admin-required`，未错误执行 DISM/Appx/VSS 深层探针 |
+| 安全性 | 回归只创建并清理独立临时测试夹；未删除、移动或修改用户/系统源数据 |

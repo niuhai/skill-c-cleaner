@@ -114,10 +114,9 @@ foreach ($target in @($config.targets)) {
                 $ok = $false
                 try {
                     if ($item.PSIsContainer) {
-                        $ok = Remove-Directory -Path $item.FullName -ShowProgress
+                        $ok = Remove-Directory -Path $item.FullName -AllowedRoots @($root) -ShowProgress
                     } else {
-                        Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop
-                        $ok = -not (Test-Path -LiteralPath $item.FullName -ErrorAction SilentlyContinue)
+                        $ok = Remove-SafeFile -Path $item.FullName -AllowedRoots @($root)
                     }
                     if ($ok) { $deletedCount++ }
                 } catch {

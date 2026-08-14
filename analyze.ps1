@@ -10,7 +10,7 @@ $SkillRoot = Split-Path -Parent $PSCommandPath
 if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
 . (Join-Path $SkillRoot "_common.ps1")
 
-$VERSION = "6.6.0"
+$VERSION = "6.7.0"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 $Global:CDriveInventory = [System.Collections.ArrayList]::new()
@@ -25,6 +25,53 @@ $Global:CDriveFastMode = [bool]$Fast
 $Global:CDriveNativePathTotals = @()
 $Global:CDriveNativePathTotalsMetadata = $null
 $Global:CDriveRecordGrowth = [bool]$RecordGrowth
+
+function Get-AnalyzerMeasurementPlanPaths {
+    param([object[]]$SelectedCategories)
+    $codes = @($SelectedCategories | ForEach-Object { [string]$_.Code })
+    $signatureMap = @{
+        A=@("system"); B=@("system"); C=@("dev_tools"); D=@("browsers")
+        E=@("ides","media","office","ai_tools","cloud_storage")
+        G=@("virtualization","games"); H=@("security"); K=@("input_methods"); L=@("im_apps")
+    }
+    $signatureCategories = [System.Collections.ArrayList]::new()
+    foreach ($code in $codes) {
+        foreach ($category in @($signatureMap[$code])) {
+            if ($category -and $category -notin $signatureCategories) { [void]$signatureCategories.Add($category) }
+        }
+    }
+
+    $paths = [System.Collections.ArrayList]::new()
+    if ($signatureCategories.Count -gt 0) {
+        foreach ($path in @(Get-SignatureMeasurementPlanPaths -Categories @($signatureCategories))) { [void]$paths.Add($path) }
+    }
+
+    if ($codes -contains "I") {
+        $versionSpecs = @(
+            @{ Root="${env:ProgramFiles(x86)}\Microsoft\EdgeCore"; Pattern='^\d+\.\d+\.\d+\.\d+$'; Minimum=2 },
+            @{ Root="$env:ProgramFiles\WPS Office"; Pattern='^\d+\.\d+\.\d+\.\d+'; Minimum=2 },
+            @{ Root="$env:ProgramFiles\Microsoft Visual Studio"; Pattern='^20\d+$'; Minimum=2 },
+            @{ Root="$env:LOCALAPPDATA\Programs\Python"; Pattern='^Python\d+'; Minimum=2 },
+            @{ Root="$env:LOCALAPPDATA\Volta\tools\image\node"; Pattern='.*'; Minimum=4 }
+        )
+        foreach ($spec in $versionSpecs) {
+            $versions = @(Get-ChildItem -LiteralPath $spec.Root -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $spec.Pattern })
+            if ($versions.Count -ge $spec.Minimum) {
+                foreach ($version in $versions) { [void]$paths.Add($version.FullName) }
+            }
+        }
+    }
+
+    if ($codes -contains "WU") {
+        foreach ($path in @(
+            'C:\$WinREAgent','C:\$WINDOWS.~BT','C:\$Windows.~WS',
+            'C:\Windows\SoftwareDistribution\Download',
+            'C:\ProgramData\Microsoft\Windows\DeliveryOptimization\Cache',
+            'C:\Windows\Logs\CBS','C:\Windows\Logs\DISM'
+        )) { [void]$paths.Add($path) }
+    }
+    return @($paths)
+}
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
@@ -68,13 +115,14 @@ $allCats = @(
     @{ Code = "U"; Script = "scan-unused-software.ps1" }
     @{ Code = "MX"; Script = "scan-misc-space.ps1" }
     @{ Code = "WU"; Script = "scan-windows-update-residue.ps1" }
+    @{ Code = "AD"; Script = "scan-admin-deep-accounting.ps1" }
     @{ Code = "SA"; Script = "scan-space-accounting.ps1" }
 )
 
 $selectedCats = if ($Fast -and $Categories -eq "all") {
     # Fast is the default evidence set for iteration-loop. F is opt-in because
     # a full C:\ recursive scan can take several minutes or hit ACLs.
-    $allCats | Where-Object { $_.Code -notin @("F", "H", "MX", "SA") }
+    $allCats | Where-Object { $_.Code -notin @("F", "H", "MX", "AD", "SA") }
 } elseif ($Categories -eq "all") { $allCats } else {
     $codes = $Categories -split "," | ForEach-Object { $_.Trim().ToUpper() }
     $allCats | Where-Object { $_.Code -in $codes }
@@ -83,6 +131,27 @@ $selectedCats = if ($Fast -and $Categories -eq "all") {
 $totalCats = @($selectedCats).Count
 $catIdx = 0
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+$planStatus = "completed"
+$planError = ""
+$planWatch = [Diagnostics.Stopwatch]::StartNew()
+try {
+    $planPaths = @(Get-AnalyzerMeasurementPlanPaths -SelectedCategories @($selectedCats))
+    $planResult = Invoke-PathMeasurementPlan -Paths $planPaths -Parallelism 4
+    $Global:CDriveScannerMetadata["PLAN"] = $planResult
+    Write-Host ("  Measurement plan: {0} unique paths, {1} cache entries seeded in {2:N1}s" -f $planResult.Unique, $planResult.Seeded, $planResult.Seconds) -ForegroundColor DarkCyan
+} catch {
+    $planStatus = "failed"
+    $planError = $_.Exception.Message
+    $Global:CDriveScannerMetadata["PLAN"] = [pscustomobject]@{ Status="failed"; Error=$planError }
+    Write-Host "  Measurement planner unavailable; scanners will measure on demand: $planError" -ForegroundColor Yellow
+} finally {
+    $planWatch.Stop()
+    [void]$Global:CDriveScanTelemetry.Add([pscustomobject]@{
+        Category="PLAN"; Script="global-measurement-plan"; Seconds=[math]::Round($planWatch.Elapsed.TotalSeconds,3)
+        FindingsAdded=0; InventoryAdded=0; Status=$planStatus; Error=$planError
+    })
+}
 
 foreach ($cat in $selectedCats) {
     $catIdx++
@@ -256,7 +325,7 @@ $catNamesCN = @{
     "I"="多版本"; "J"="重复运行时"; "K"="输入法"; "L"="即时通讯";
     "VM"="虚拟内存"; "SI"="Search索引"; "O"="定向优化"; "GR"="增长追踪";
     "U"="不常用软件候选"; "MX"="C盘零碎信息"; "WU"="Windows更新残留";
-    "SA"="NTFS实际占用"
+    "AD"="管理员深度核算"; "SA"="NTFS实际占用"
 }
 
 $knownBloat = @{

@@ -33,7 +33,7 @@ if (Test-Path $updatePath) {
     $confirm = Read-Host "  是否清理? (Y/N)"
     if ($confirm -eq 'Y') {
         Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
-        Remove-Directory -Path $updatePath -ShowProgress
+        Remove-Directory -Path $updatePath -AllowedRoots @($updatePath) -ShowProgress
         $null = New-Item -ItemType Directory -Path $updatePath -Force -ErrorAction SilentlyContinue
         Start-Service wuauserv -ErrorAction SilentlyContinue
         Write-Host "  ✅ 已清理" -ForegroundColor Green

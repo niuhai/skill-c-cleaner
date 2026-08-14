@@ -41,7 +41,7 @@ function Clean-Cache {
     $confirm = Read-Host "  是否清理? (Y/N)"
     if ($confirm -eq 'Y') {
         try {
-            Remove-Directory -Path $Path -ShowProgress
+            Remove-Directory -Path $Path -AllowedRoots @($Path) -ShowProgress
             $null = New-Item -ItemType Directory -Path $Path -Force -ErrorAction SilentlyContinue
             Write-Host "  ✅ 已清理 ${sizeMB} MB" -ForegroundColor Green
             $script:totalFreed += [long]$r.Size
@@ -73,7 +73,7 @@ if (Test-Path $nugetPath) {
         $nsizeMB = [math]::Round($nr.Size / 1MB, 2)
         Write-Host "[NuGet缓存] ${nsizeMB} MB — 删除后VS打开方案重新下载" -ForegroundColor Yellow
         if ((Read-Host "  确认删除? 输入 YES 才执行") -eq 'YES') {
-            Remove-Directory -Path $nugetPath -ShowProgress
+            Remove-Directory -Path $nugetPath -AllowedRoots @($nugetPath) -ShowProgress
             $null = New-Item -ItemType Directory -Path $nugetPath -Force -ErrorAction SilentlyContinue
             Write-Host "  ✅ 已清理" -ForegroundColor Green
         }
@@ -87,7 +87,7 @@ if (Test-Path $mavenPath) {
         $msizeMB = [math]::Round($mr.Size / 1MB, 2)
         Write-Host "[Maven仓库] ${msizeMB} MB — 删除后构建重新下载" -ForegroundColor Yellow
         if ((Read-Host "  确认删除? 输入 YES 才执行") -eq 'YES') {
-            Remove-Directory -Path $mavenPath -ShowProgress
+            Remove-Directory -Path $mavenPath -AllowedRoots @($mavenPath) -ShowProgress
             $null = New-Item -ItemType Directory -Path $mavenPath -Force -ErrorAction SilentlyContinue
             Write-Host "  ✅ 已清理" -ForegroundColor Green
         }

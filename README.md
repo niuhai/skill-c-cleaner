@@ -15,7 +15,7 @@
   </p>
   
   <p align="center">
-    <img src="https://img.shields.io/badge/version-v6.6.0-blue.svg" alt="Version"/>
+    <img src="https://img.shields.io/badge/version-v6.7.0-blue.svg" alt="Version"/>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
     <img src="https://img.shields.io/badge/powershell-5.1%2B-blue.svg" alt="PowerShell"/>
     <img src="https://img.shields.io/badge/platform-windows-lightgrey.svg" alt="Platform"/>
@@ -58,6 +58,8 @@ A-系统隐藏 │ B-临时缓存 │ C-开发缓存 │ D-浏览器数据
 E-应用数据 │ F-大文件   │ G-特殊占用 │ H-安全软件
 I-多版本   │ J-重复运行时│ K-输入法   │ L-即时通讯
 ```
+
+扩展诊断还包括 VM-虚拟内存、SI-搜索索引、O-定向优化、GR-增长追踪、U-不常用软件、MX-零碎空间、WU-更新残留、AD-管理员深度核算和 SA-NTFS 实际占用。`AD`/`SA` 都是按需解释层，不进入自动清理额度。
 
 ### 📊 现象级报告系统（v6 AI Decision Edition）
 
@@ -102,7 +104,7 @@ cd skill-c-cleaner
 .\analyze.ps1 -Categories "J"
 ```
 
-v6.6 的快速模式使用 Win32 原生目录测量、定向运行时候选和批量磁盘映射；本机 16 类扫描实测约 9.5 秒。完整模式仍保留全覆盖扫描，且任意层级的 junction/符号链接不会被当作 C 盘可释放空间或沿链接清理。
+v6.7 会先把所选类别的精确路径合并成一次有界原生测量计划，再由各扫描器复用缓存；本机 16 类快速扫描实测 5.7–5.9 秒，91 次后续测量全部命中缓存。所有正式 cleaner 统一拒绝根目录、越界路径、非 C 卷及任意祖先 junction/符号链接。管理员可按需运行 `.\analyze.ps1 -Categories "AD"`，只读解释 VSS、WinSxS、WindowsApps、Installer、DriverStore 和 Reserved Storage。
 
 ### 示例输出
 

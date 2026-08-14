@@ -7,6 +7,7 @@ $SkillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 if (-not (Test-Path (Join-Path $SkillRoot "_common.ps1"))) {
     throw "Skill root could not be resolved from the script location."
 }
+. (Join-Path $SkillRoot "_common.ps1")
 
 $drive = Get-PSDrive C
 $usedPercent = [math]::Round($drive.Used / ($drive.Used + $drive.Free) * 100, 1)
@@ -39,4 +40,6 @@ if ($usedPercent -ge $threshold) {
 }
 
 # 清理超过30天的日志
-Get-ChildItem $logDir -Filter "*.txt" | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } | Remove-Item -Force
+foreach ($oldLog in @(Get-ChildItem $logDir -Filter "*.txt" | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) })) {
+    [void](Remove-SafeFile -Path $oldLog.FullName -AllowedRoots @($logDir))
+}

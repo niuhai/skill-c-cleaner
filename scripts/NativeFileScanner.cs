@@ -116,6 +116,16 @@ namespace CleanSight
         public double ElapsedSeconds { get; set; }
     }
 
+    public sealed class PathSafetyInspectionResult
+    {
+        public string Path { get; set; }
+        public string Root { get; set; }
+        public bool Exists { get; set; }
+        public bool IsDirectory { get; set; }
+        public bool ReparsePointInAncestry { get; set; }
+        public string Error { get; set; }
+    }
+
     internal sealed class DirectoryNode
     {
         public string Path;
@@ -424,6 +434,31 @@ namespace CleanSight
                 results[index] = MeasurePath(paths[index]);
             });
             return results;
+        }
+
+        public static PathSafetyInspectionResult InspectPathSafety(string path)
+        {
+            var result = new PathSafetyInspectionResult();
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                result.Error = "path is empty";
+                return result;
+            }
+
+            try
+            {
+                var normalized = Normalize(path);
+                result.Path = normalized;
+                result.Root = Path.GetPathRoot(normalized);
+                result.IsDirectory = Directory.Exists(normalized);
+                result.Exists = result.IsDirectory || File.Exists(normalized);
+                if (result.Exists) result.ReparsePointInAncestry = HasReparsePointInPath(normalized);
+            }
+            catch (Exception ex)
+            {
+                result.Error = ex.Message;
+            }
+            return result;
         }
 
         private static bool HasReparsePointInPath(string path)
