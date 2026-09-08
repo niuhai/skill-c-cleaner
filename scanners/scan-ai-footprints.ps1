@@ -311,13 +311,21 @@ foreach ($app in @($config.applications)) {
         $exactPolicies = @($appComponents | Where-Object { $_.Path.TrimEnd('\') -eq ([string]$child.path).TrimEnd('\') })
         if ($exactPolicies.Count -gt 0) { continue }
         $nestedPolicies = @($appComponents | Where-Object { Test-PathAtOrBelow -Path $_.Path -Root ([string]$child.path) })
+        # Component policies may intentionally nest (for example User plus
+        # User\History). Count their path union via outermost targets so the
+        # classified total cannot double-count descendants and hide unknowns.
+        $classifiedPolicies = @(Select-TopLevelPathItems -Items @($nestedPolicies | Where-Object status -eq 'ok'))
+        $classifiedBytes = [int64](($classifiedPolicies | Measure-Object Bytes -Sum).Sum)
+        $unexplainedBytes = [int64][math]::Max(0, [int64]$child.bytes - $classifiedBytes)
+        if ($unexplainedBytes -lt $discoveryMinimumBytes) { continue }
         $coverage = if ($nestedPolicies.Count -gt 0) { 'partial' } else { 'unclassified' }
         [void]$discoveryCandidates.Add([pscustomobject]@{
             appId=[string]$app.id; appName=[string]$app.name; path=[string]$child.path
-            bytes=[int64]$child.bytes; fileCount=[int64]$child.fileCount; coverage=$coverage
+            bytes=$unexplainedBytes; containerBytes=[int64]$child.bytes; classifiedBytes=$classifiedBytes
+            fileCount=[int64]$child.fileCount; coverage=$coverage
             rootId=[string]$ownerRoot[0].RootId; rootKind=[string]$ownerRoot[0].Kind
             nestedPolicies=@($nestedPolicies | ForEach-Object { [pscustomobject]@{ id=$_.Id; action=$_.Action; path=$_.Path } })
-            disposition='review'; reason='Large child of a mixed AI data root lacks an exact explicit policy.'
+            disposition='review'; reason='At least discoveryMinimumMB of a mixed AI-data child remains outside exact explicit policies.'
         })
     }
 
@@ -339,12 +347,12 @@ $safeTotal = [int64](($uniqueActionComponents | Where-Object Action -eq 'safe-cl
 $managedTotal = [int64](($uniqueActionComponents | Where-Object Action -eq 'managed-clean' | Measure-Object -Property Bytes -Sum).Sum)
 $migrationTotal = [int64](($includedRoots | Where-Object { $_.Relocation -and $_.Relocation -notin @('vendor-only','windows-apps-settings') } | Measure-Object -Property Bytes -Sum).Sum)
 
-Write-Host ("  C: AI physical footprint: {0:N2} GB across {1} detected groups." -f ($totalCBytes/1GB), @($appRows | Where-Object cBytes -gt 0).Count) -ForegroundColor Yellow
+Write-Host ("  C: AI located logical footprint: {0:N2} GB across {1} detected groups." -f ($totalCBytes/1GB), @($appRows | Where-Object cBytes -gt 0).Count) -ForegroundColor Yellow
 Write-Host ("  Explicit recurring cleanup: safe {0:N2} GB; managed/confirm {1:N2} GB. Migration candidates: {2:N2} GB." -f ($safeTotal/1GB), ($managedTotal/1GB), ($migrationTotal/1GB)) -ForegroundColor DarkCyan
 if ($discoveryCandidates.Count -gt 0) {
     Write-Host ("  Learning queue: {0} large mixed-data paths need classification; none are treated as cleanable." -f $discoveryCandidates.Count) -ForegroundColor Magenta
     foreach ($candidate in @($discoveryCandidates | Sort-Object bytes -Descending | Select-Object -First 5)) {
-        Write-Host ("     {0} / {1}: {2:N2} GB [{3}]" -f $candidate.appName, (Split-Path -Leaf $candidate.path), ($candidate.bytes/1GB), $candidate.coverage) -ForegroundColor DarkGray
+        Write-Host ("     {0} / {1}: {2:N2} GB unexplained of {3:N2} GB [{4}]" -f $candidate.appName, (Split-Path -Leaf $candidate.path), ($candidate.bytes/1GB), ($candidate.containerBytes/1GB), $candidate.coverage) -ForegroundColor DarkGray
     }
 }
 
@@ -358,9 +366,9 @@ foreach ($row in @($appRows | Where-Object { $_.cBytes -ge $minimumDisplayBytes 
     foreach ($child in @($row.topChildren | Select-Object -First 3)) {
         Write-Host ("     {0,-26} {1,7:N2} GB" -f $child.name, ($child.bytes/1GB)) -ForegroundColor DarkGray
     }
-    $evidence = "C physical roots only; install_drive=$installText; active=$($row.active); safe_cache=$([math]::Round($row.safeCleanBytes/1GB,2))GB; managed=$([math]::Round($row.managedCleanBytes/1GB,2))GB; migration_candidate=$([math]::Round($row.migrationCandidateBytes/1GB,2))GB$mismatchText$deltaText"
+    $evidence = "C-located logical bytes; reparse targets excluded; install_drive=$installText; active=$($row.active); safe_cache=$([math]::Round($row.safeCleanBytes/1GB,2))GB; managed=$([math]::Round($row.managedCleanBytes/1GB,2))GB; migration_candidate=$([math]::Round($row.migrationCandidateBytes/1GB,2))GB$mismatchText$deltaText"
     Write-InventoryResult -Category "AF-ai-footprint" -Name $row.name -Size $row.cBytes -Path (@($row.roots | Where-Object { $_.drive -eq 'C:\' } | ForEach-Object path) -join '; ') `
-        -Kind "ai-app-footprint" -Evidence $evidence -Access $row.status
+        -Kind "ai-app-logical-footprint" -Evidence $evidence -Access $row.status
 }
 
 foreach ($group in @($uniqueActionComponents | Group-Object { "$($_.AppId)|$($_.Kind)|$($_.Action)|$($_.Risk)" } | Sort-Object { ($_.Group | Measure-Object Bytes -Sum).Sum } -Descending)) {
@@ -398,11 +406,12 @@ if ($null -eq $Global:CDriveScannerMetadata) { $Global:CDriveScannerMetadata = @
 $Global:CDriveScannerMetadata["AF"] = [pscustomobject]@{
     schema=1; engine=if($scan){"one-pass Win32 aggregation"}else{"logical measurement fallback"}
     elapsed_seconds=if($scan){[math]::Round($scan.ElapsedSeconds,3)}else{$null}
-    c_bytes=$totalCBytes; safe_clean_bytes=$safeTotal; managed_clean_bytes=$managedTotal; migration_candidate_bytes=$migrationTotal
+    c_bytes=$totalCBytes; logical_c_bytes=$totalCBytes; measurement_basis='logical file lengths on C; reparse targets excluded; allocated bytes verified only during cleanup/SA'
+    safe_clean_bytes=$safeTotal; managed_clean_bytes=$managedTotal; migration_candidate_bytes=$migrationTotal
     enumerated_files=if($scan){[int64]$scan.EnumeratedFiles}else{$null}; skipped_directories=if($scan){[int64]$scan.SkippedDirectories}else{$null}
     previous_compatible=[bool]$previousCompatible; snapshot_path=$latestPath; recorded=[bool]$Global:CDriveRecordGrowth
     apps=@($appRows); discovery_candidates=@($discoveryCandidates | Sort-Object bytes -Descending); external_roots=@($roots | Where-Object { $_.Status -in @('external','redirected') } | ForEach-Object {
         [pscustomobject]@{ appId=$_.AppId; path=$_.Path; drive=$_.Drive; status=$_.Status; linkTarget=$_.LinkTarget; kind=$_.Kind; source=$_.Source }
-    }); accounting="inventory totals are physical C roots only; only explicit components enter cleanup findings"
+    }); accounting="inventory totals are C-located logical bytes with reparse targets excluded; only explicit components enter cleanup findings; cleanup sessions/SA provide allocated-byte evidence"
 }
 Write-Host ""

@@ -166,6 +166,11 @@
         { "id": "partition-dawn-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\Dawn*Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
         { "id": "partition-service-worker-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\Service Worker\\CacheStorage", "kind": "service-worker-cache", "action": "managed-clean", "risk": "cautious", "note": "浏览器离线缓存；关闭 Codex 后清理并验证会话" },
         { "id": "component-crx-cache", "rootId": "roaming", "relative": "web\\Codex\\component_crx_cache", "kind": "component-cache", "action": "managed-clean", "risk": "cautious", "note": "Chromium 组件包缓存；关闭 Codex 后处理" },
+        { "id": "partition-indexed-db", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\IndexedDB", "kind": "application-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "partition-local-storage", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\Local Storage", "kind": "application-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "default-local-storage", "rootId": "roaming", "relative": "web\\Codex\\Default\\Local Storage", "kind": "application-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "wasm-tts-engine", "rootId": "roaming", "relative": "web\\Codex\\WasmTtsEngine", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "widevine", "rootId": "roaming", "relative": "web\\Codex\\WidevineCdm", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" },
         { "id": "crash-reports", "rootId": "roaming", "relative": "web\\Codex\\Crashpad\\reports", "kind": "crash-report", "action": "safe-clean", "risk": "safe" }
       ]
     },
@@ -208,6 +213,123 @@
         { "id": "torch", "path": "%USERPROFILE%\\.cache\\torch", "kind": "model-cache", "policy": "managed-clean", "relocation": "environment-or-library-config" },
         { "id": "modelscope", "path": "%USERPROFILE%\\.cache\\modelscope", "kind": "model-cache", "policy": "managed-clean", "relocation": "environment-or-library-config" },
         { "id": "whisper", "path": "%USERPROFILE%\\.cache\\whisper", "kind": "model-cache", "policy": "managed-clean", "relocation": "application-config" }
+      ],
+      "components": []
+    },
+    {
+      "id": "doubao-work",
+      "name": "DoubaoWork",
+      "processes": ["DoubaoWork"],
+      "roots": [
+        { "id": "local", "path": "%LOCALAPPDATA%\\DoubaoWork", "kind": "user-data-and-runtime", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "profile", "path": "%USERPROFILE%\\DoubaoWork", "kind": "agent-profile", "policy": "preserve", "relocation": "junction-cautious" }
+      ],
+      "components": [
+        { "id": "default-cache", "rootId": "local", "relative": "User Data\\Default\\Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "default-code-cache", "rootId": "local", "relative": "User Data\\Default\\Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "default-gpu-cache", "rootId": "local", "relative": "User Data\\Default\\GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "shader-cache", "rootId": "local", "relative": "User Data\\GrShaderCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "gecko-cache", "rootId": "local", "relative": "User Data\\gecko_cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "sandbox-runtime", "rootId": "local", "relative": "User Data\\sandbox_runtime", "kind": "sandbox-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "sandbox-environments", "rootId": "local", "relative": "User Data\\Default\\sandbox_envs_dir", "kind": "sandbox-environments", "action": "preserve", "risk": "forbidden" },
+        { "id": "sdk-storage", "rootId": "local", "relative": "User Data\\sdk_storage", "kind": "sdk-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "workspace-state", "rootId": "local", "relative": "User Data\\Default\\.doubaowork", "kind": "workspace-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "indexed-db", "rootId": "local", "relative": "User Data\\Default\\IndexedDB", "kind": "application-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "local-storage", "rootId": "local", "relative": "User Data\\Default\\Local Storage", "kind": "application-state", "action": "preserve", "risk": "forbidden" }
+      ]
+    },
+    {
+      "id": "zcode",
+      "name": "ZCode",
+      "registryPatterns": ["^ZCode(\\s|$)"],
+      "processes": ["ZCode"],
+      "roots": [
+        { "id": "profile", "path": "%USERPROFILE%\\.zcode", "kind": "agent-profile", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "roaming", "path": "%APPDATA%\\ZCode", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "updater", "path": "%LOCALAPPDATA%\\@zcodedesktop-updater", "kind": "update-residue", "policy": "managed-clean" }
+      ],
+      "components": [
+        { "id": "cli", "rootId": "profile", "relative": "cli", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "profile-v2", "rootId": "profile", "relative": "v2", "kind": "agent-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "workspace", "rootId": "profile", "relative": "workspace", "kind": "workspace-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "session", "rootId": "roaming", "relative": "session", "kind": "session-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "updater-pending", "rootId": "updater", "relative": "pending", "kind": "update-residue", "action": "managed-clean", "risk": "cautious" },
+        { "id": "updater-installer", "rootId": "updater", "relative": "installer.exe", "kind": "update-residue", "action": "managed-clean", "risk": "cautious" }
+      ]
+    },
+    {
+      "id": "lobster-ai",
+      "name": "LobsterAI",
+      "registryPatterns": ["^LobsterAI(\\s|$)"],
+      "processes": ["LobsterAI"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\LobsterAI", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "profile", "path": "%USERPROFILE%\\lobsterai", "kind": "agent-profile", "policy": "preserve", "relocation": "junction-cautious" },
+        { "id": "updater", "path": "%LOCALAPPDATA%\\lobsterai-updater", "kind": "update-residue", "policy": "managed-clean" }
+      ],
+      "components": [
+        { "id": "database", "rootId": "roaming", "relative": "lobsterai.sqlite", "kind": "application-database", "action": "preserve", "risk": "forbidden" },
+        { "id": "skills", "rootId": "roaming", "relative": "SKILLs", "kind": "skills", "action": "preserve", "risk": "forbidden" },
+        { "id": "logs", "rootId": "roaming", "relative": "logs", "kind": "logs", "action": "safe-clean", "risk": "safe" },
+        { "id": "updater-pending", "rootId": "updater", "relative": "pending", "kind": "update-residue", "action": "managed-clean", "risk": "cautious" },
+        { "id": "updater-installer", "rootId": "updater", "relative": "installer.exe", "kind": "update-residue", "action": "managed-clean", "risk": "cautious" }
+      ]
+    },
+    {
+      "id": "codebuddy",
+      "name": "CodeBuddy",
+      "processes": ["CodeBuddy", "CodeBuddy CN"],
+      "roots": [
+        { "id": "profile", "path": "%USERPROFILE%\\.codebuddy", "kind": "agent-profile", "policy": "preserve", "relocation": "junction-cautious" },
+        { "id": "roaming", "path": "%APPDATA%\\CodeBuddy CN", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "extension", "path": "%LOCALAPPDATA%\\CodeBuddyExtension", "kind": "extension-runtime", "policy": "preserve" }
+      ],
+      "components": [
+        { "id": "cache", "rootId": "roaming", "relative": "Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "code-cache", "rootId": "roaming", "relative": "Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "gpu-cache", "rootId": "roaming", "relative": "GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "user-state", "rootId": "roaming", "relative": "User", "kind": "user-state", "action": "preserve", "risk": "forbidden" }
+      ]
+    },
+    {
+      "id": "doubao",
+      "name": "Doubao",
+      "processes": ["Doubao"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\Doubao", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "profile", "path": "%USERPROFILE%\\Doubao", "kind": "user-profile", "policy": "preserve", "relocation": "junction-cautious" }
+      ],
+      "components": [
+        { "id": "cache", "rootId": "roaming", "relative": "User Data\\Default\\Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "code-cache", "rootId": "roaming", "relative": "User Data\\Default\\Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "gpu-cache", "rootId": "roaming", "relative": "User Data\\Default\\GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "dawn-webgpu-cache", "rootId": "roaming", "relative": "User Data\\Default\\DawnWebGPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "dawn-graphite-cache", "rootId": "roaming", "relative": "User Data\\Default\\DawnGraphiteCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "service-worker-cache", "rootId": "roaming", "relative": "User Data\\Default\\Service Worker\\CacheStorage", "kind": "service-worker-cache", "action": "managed-clean", "risk": "cautious" },
+        { "id": "indexed-db", "rootId": "roaming", "relative": "User Data\\Default\\IndexedDB", "kind": "application-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "local-storage", "rootId": "roaming", "relative": "User Data\\Default\\Local Storage", "kind": "application-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "file-system", "rootId": "roaming", "relative": "User Data\\Default\\File System", "kind": "application-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "debug-log", "rootId": "roaming", "relative": "debug.log", "kind": "logs", "action": "safe-clean", "risk": "safe" }
+      ]
+    },
+    {
+      "id": "ichat",
+      "name": "iChat",
+      "processes": ["iChat"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\ichat", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" }
+      ],
+      "components": [
+        { "id": "cef-local-storage", "rootId": "roaming", "relative": "CefLocalStorage", "kind": "application-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "store", "rootId": "roaming", "relative": "store", "kind": "application-state", "action": "preserve", "risk": "forbidden" }
+      ]
+    },
+    {
+      "id": "github-copilot",
+      "name": "GitHub Copilot",
+      "processes": [],
+      "roots": [
+        { "id": "profile", "path": "%USERPROFILE%\\.copilot", "kind": "agent-profile", "policy": "preserve", "relocation": "vendor-only" }
       ],
       "components": []
     },

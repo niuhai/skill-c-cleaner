@@ -29,10 +29,11 @@ if (-not $af) { throw "Report does not contain AF metadata: $ReportPath" }
 
 $apps = @($af.apps)
 Assert-AFReport 'all configured applications have report rows' ($apps.Count -eq @($config.applications).Count) "$($apps.Count) rows"
-Assert-AFReport 'physical footprint is positive' ([int64]$af.c_bytes -gt 0)
+Assert-AFReport 'C-located logical footprint is positive' ([int64]$af.c_bytes -gt 0)
+Assert-AFReport 'logical compatibility fields reconcile' ([int64]$af.logical_c_bytes -eq [int64]$af.c_bytes)
 Assert-AFReport 'safe total is positive' ([int64]$af.safe_clean_bytes -gt 0)
 Assert-AFReport 'managed total is positive' ([int64]$af.managed_clean_bytes -gt 0)
-Assert-AFReport 'app totals reconcile to physical total' ([int64](($apps | Measure-Object cBytes -Sum).Sum) -eq [int64]$af.c_bytes)
+Assert-AFReport 'app totals reconcile to logical total' ([int64](($apps | Measure-Object cBytes -Sum).Sum) -eq [int64]$af.c_bytes)
 Assert-AFReport 'all discovery candidates remain review-only' (@($af.discovery_candidates | Where-Object { $_.disposition -ne 'review' }).Count -eq 0)
 Assert-AFReport 'all external roots retain app attribution' (@($af.external_roots | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.appId) }).Count -eq 0)
 Assert-AFReport 'no root remains pending after scan' (@($apps.roots | Where-Object status -eq 'pending').Count -eq 0)

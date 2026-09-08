@@ -95,7 +95,7 @@ $result = [pscustomobject]@{
     schema=1; generatedAt=(Get-Date).ToString('o'); sourceReport=$loaded.Path
     destinationRoot=$DestinationRoot; candidateBytes=$scannerCandidateBytes; displayedCandidateBytes=$displayedCandidateBytes
     platformAdvisoryBytes=$platformAdvisoryBytes
-    warning='Read-only plan. candidateBytes uses the AF accounting total; displayed plans honor MinimumSizeMB. WindowsApps is advisory-only. Sizes can overlap cleanup candidates; do not add them together. No move, deletion, junction, or environment change was performed.'
+    warning='Read-only plan. Sizes are C-located logical bytes, not guaranteed allocated-byte reclaim. candidateBytes uses the AF accounting total; displayed plans honor MinimumSizeMB. WindowsApps is advisory-only. Sizes can overlap cleanup candidates; do not add them together. No move, deletion, junction, or environment change was performed.'
     plans=$ordered
 }
 

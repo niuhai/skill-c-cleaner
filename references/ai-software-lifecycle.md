@@ -4,7 +4,7 @@ AI 桌面软件不能只按“安装目录”核算。一次 AF 扫描同时区�
 
 ## 实机闭环
 
-1. **发现**：运行 `./analyze.ps1 -Categories AF -OutputFormat json -RecordGrowth`，得到应用级物理占用、安装盘、活跃进程、清理额度、迁移候选和未分类热点。
+1. **发现**：运行 `./analyze.ps1 -Categories AF -OutputFormat json -RecordGrowth`，得到应用级 C 盘逻辑占用、安装盘、活跃进程、清理额度、迁移候选和未分类热点。AF 排除重解析目标，但逻辑字节不等于 NTFS 实际分配字节；执行清理时用 cleanup session 核验分配字节与盘符可用空间，慢速审计可用 SA 类。
 2. **分类**：对 `scanner_metadata.AF.discovery_candidates` 逐项判断为 `safe-clean`、`managed-clean`、`preserve` 或 `review`。未拿到应用语义或权威依据前保持 `review`。
 3. **沉淀**：把已验证根和精确组件加入 `extensions/ai-footprints.json`；不能把整个 `User`、`workspaceStorage`、`History`、数据库、当前 runtime、模型或扩展目录写成安全缓存。
 4. **验证**：运行 `tests/validate-ai-footprints.ps1`、AF 复扫和清理预览。检查父子去重、重解析点、空正则、进程门禁和报告总量。

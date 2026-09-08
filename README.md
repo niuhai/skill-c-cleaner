@@ -15,7 +15,7 @@
   </p>
   
   <p align="center">
-    <img src="https://img.shields.io/badge/version-v7.0.0-blue.svg" alt="Version"/>
+    <img src="https://img.shields.io/badge/version-v7.1.0-blue.svg" alt="Version"/>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
     <img src="https://img.shields.io/badge/powershell-5.1%2B-blue.svg" alt="PowerShell"/>
     <img src="https://img.shields.io/badge/platform-windows-lightgrey.svg" alt="Platform"/>
@@ -111,7 +111,7 @@ cd skill-c-cleaner
 .\migrators\plan-ai-footprints.ps1
 ```
 
-v7.0 新增 AF 生命周期层：本机一遍扫描 27.78 GB AI 软件物理占用约 11.5 秒，并分别给出 4.31 GB 安全缓存、3.52 GB 需确认项、20.74 GB 迁移候选和 5 个待分类热点。所有正式 cleaner 统一拒绝根目录、越界路径、非 C 卷及任意祖先 junction/符号链接。管理员可按需运行 `.\analyze.ps1 -Categories "AD"`，只读解释 VSS、WinSxS、WindowsApps、Installer、DriverStore 和 Reserved Storage。
+v7.1 的 AF 生命周期层覆盖 19 类 AI 工具：本机一遍扫描约 29.01 GB 位于 C 盘的逻辑字节，分别给出 4.47 GB 安全缓存、3.82 GB 需确认项、21.67 GB 迁移候选和按“未解释字节”计算的学习队列。逻辑字节不冒充 NTFS 实际分配空间；执行清理时以 cleanup session 的 allocated bytes 与盘符可用空间变化为准。所有正式 cleaner 统一拒绝根目录、越界路径、非 C 卷及任意祖先 junction/符号链接。
 
 ### 示例输出
 
@@ -393,8 +393,8 @@ c-drive-cleaner/
 - [ ] v6.3: 预测性分析引擎（机器学习模型）
 
 ### 规划中 📋
-- [ ] v7.0: Web Dashboard（可视化界面）
-- [ ] v7.1: 多盘符支持（D/E/F 盘）
+- [ ] 后续版本: Web Dashboard（可视化界面）
+- [ ] 后续版本: 多盘符支持（D/E/F 盘）
 - [ ] v7.2: 企业版（合规性 + 策略管理）
 - [ ] v8.0: 社区平台（签名共享 + 排行榜）
 

@@ -36,6 +36,16 @@ $emptyMap = @{}
 $emptyMappedRoots = if ($emptyMap.ContainsKey('missing')) { @($emptyMap['missing']) } else { @() }
 Assert-AF 'missing root-map entry normalizes to zero roots' (@($emptyMappedRoots).Count -eq 0)
 
+$unionFixture = @(
+    [pscustomobject]@{ Path='C:\fixture\User'; Bytes=[int64]100 }
+    [pscustomobject]@{ Path='C:\fixture\User\History'; Bytes=[int64]40 }
+    [pscustomobject]@{ Path='C:\fixture\Cache'; Bytes=[int64]30 }
+    [pscustomobject]@{ Path='C:\fixture\Cache'; Bytes=[int64]30 }
+)
+$unionTop = @(Select-TopLevelPathItems -Items $unionFixture)
+Assert-AF 'nested classified paths collapse to a non-overlapping union' ($unionTop.Count -eq 2) (($unionTop.Path) -join '; ')
+Assert-AF 'classified path union does not double-count descendants or duplicates' ([int64](($unionTop | Measure-Object Bytes -Sum).Sum) -eq 130)
+
 $allowedActions = @('safe-clean', 'managed-clean', 'preserve', 'review')
 $allowedRisks = @('safe', 'cautious', 'forbidden')
 $genericProcessNames = @('node', 'python', 'python3', 'java', 'dotnet')
@@ -71,6 +81,22 @@ foreach ($app in $apps) {
         if ([string]$component.action -eq 'preserve') {
             Assert-AF "$label preserve is forbidden to cleaners" ([string]$component.risk -eq 'forbidden') ([string]$component.risk)
         }
+    }
+}
+
+# Keep the lifecycle inventory at least as broad as the older ai_tools
+# signature category. New generic AI signatures must be deliberately mapped
+# into AF instead of silently missing lifecycle accounting.
+$signaturePath = Join-Path $skillRoot 'extensions\app-signatures.json'
+$signatures = Get-Content -LiteralPath $signaturePath -Raw -Encoding UTF8 | ConvertFrom-Json
+$afExpandedRoots = @($apps.roots | ForEach-Object { Expand-EnvPath ([string]$_.path) } | Where-Object { $_ })
+foreach ($signatureApp in @($signatures.categories.ai_tools.apps)) {
+    foreach ($detectPath in @($signatureApp.detect_paths)) {
+        $expandedDetect = Expand-EnvPath ([string]$detectPath)
+        $covered = @($afExpandedRoots | Where-Object {
+            (Test-PathAtOrBelow -Path $_ -Root $expandedDetect) -or (Test-PathAtOrBelow -Path $expandedDetect -Root $_)
+        }).Count -gt 0
+        Assert-AF "legacy AI signature is represented in AF: $($signatureApp.name)" $covered ([string]$detectPath)
     }
 }
 

@@ -522,6 +522,31 @@ function Test-PathAtOrBelow {
     } catch { return $false }
 }
 
+function Select-TopLevelPathItems {
+    param(
+        [AllowEmptyCollection()][object[]]$Items = @(),
+        [string]$PathProperty = 'Path'
+    )
+
+    $selected = [System.Collections.ArrayList]::new()
+    $seen = @{}
+    $ordered = @($Items | Where-Object {
+        $_ -and -not [string]::IsNullOrWhiteSpace([string]$_.$PathProperty)
+    } | Sort-Object @{ Expression = { ([string]$_.$PathProperty).TrimEnd('\').Length } }, @{ Expression = { [string]$_.$PathProperty } })
+
+    foreach ($item in $ordered) {
+        $path = ([string]$item.$PathProperty).TrimEnd('\')
+        $key = $path.ToLowerInvariant()
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        $covered = @($selected | Where-Object {
+            Test-PathAtOrBelow -Path $path -Root (([string]$_.$PathProperty).TrimEnd('\'))
+        }).Count -gt 0
+        if (-not $covered) { [void]$selected.Add($item) }
+    }
+    return @($selected)
+}
+
 function Load-SignatureDb {
     param([string]$Category)
     $sigFile = Join-Path (Get-SkillRoot) "extensions\app-signatures.json"

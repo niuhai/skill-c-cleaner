@@ -327,13 +327,20 @@ c-drive-cleaner/
 
 ## v7.0.0 AI software lifecycle and live-learning note
 
-- `AF` accounts for physical C-drive AI footprints across installs, Electron profiles, runtimes, models, extensions, indexes, state and updater residue in one native pass. Whole roots stay inventory-only; only exact configured components enter cleanup totals.
+- `AF` accounts for C-located logical AI footprints across installs, Electron profiles, runtimes, models, extensions, indexes, state and updater residue in one native pass. Whole roots stay inventory-only; only exact configured components enter cleanup totals.
 - The report exposes a non-destructive learning queue for large unclassified children. A discovery remains `review` until its semantics, safety and repeated measurements justify a config change.
 - The AF cleaner defaults to preview, blocks active applications and reparse ancestry, and writes before/after cleanup sessions. The migration planner is read-only and prefers official environment variables or vendor lifecycle commands.
 - Empty optional regex arrays are normalized explicitly so they can never match every installed package. The release test covers configuration structure, preservation invariants and this regression.
-- Measured on this machine after one discovery/classification round: 27.78 GB of physical AI footprint, 4.31 GB explicit safe cache, 3.52 GB managed/confirm items, 20.74 GB migration candidates and 5 remaining review hotspots; AF completed in 11.5 seconds (7.4 seconds native enumeration).
+- Measured on this machine after one discovery/classification round: 27.78 GB of C-located logical AI footprint, 4.31 GB explicit safe cache, 3.52 GB managed/confirm items, 20.74 GB migration candidates and 5 remaining review hotspots; AF completed in 11.5 seconds (7.4 seconds native enumeration).
 
-*CleanSight v7.0.0 — AI Disk Health Advisor*
+## v7.1.0 unexplained-byte learning and broader AI coverage note
+
+- AF now reports only the unclassified remainder of a mixed-data child. Already classified nested cache/state paths are collapsed to a non-overlapping union before subtraction, so neither repeated parent reports nor parent/child double counting can distort the learning queue.
+- The lifecycle config adds DoubaoWork, ZCode, LobsterAI, CodeBuddy, Doubao, iChat and GitHub Copilot. Validation requires every legacy `ai_tools` signature path to overlap an AF root, preventing the lifecycle layer from silently falling behind the older signature catalog.
+- AF terminology now states its measurement basis precisely: logical file lengths physically located on C with reparse targets excluded. NTFS allocated bytes and real free-space changes remain cleanup-session/SA evidence.
+- Measured on this machine: 19 configured groups, 15 detected, 29.01 GB C-located logical footprint, 4.47 GB safe, 3.82 GB managed/confirm, 21.67 GB migration candidates, zero unexplained hotspots above 100 MB, and 0 skipped directories. The latest warm native pass took 4.8 seconds.
+
+*CleanSight v7.1.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
 ## 虚拟内存强化规则（VM）
 
