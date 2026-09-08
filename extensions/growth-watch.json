@@ -26,6 +26,7 @@
     { "id": "codex-runtime", "name": "Codex runtimes", "path": "%USERPROFILE%\\.cache\\codex-runtimes", "kind": "agent-cache", "role": "detail", "parentId": "user-cache" },
     { "id": "codex-data", "name": "Codex data", "path": "%USERPROFILE%\\.codex", "kind": "agent-data", "role": "detail", "parentId": "users" },
     { "id": "workbuddy-data", "name": "WorkBuddy data", "path": "%USERPROFILE%\\.workbuddy", "kind": "agent-data", "role": "detail", "parentId": "users" },
+    { "id": "esp-idf-tools", "name": "ESP-IDF tools", "path": "%USERPROFILE%\\.espressif", "kind": "dev-runtime", "role": "detail", "parentId": "users" },
 
     { "id": "trae-cn", "name": "Trae CN", "path": "%APPDATA%\\Trae CN", "kind": "app-data", "role": "detail", "parentId": "roaming-appdata" },
     { "id": "trae-solo", "name": "TRAE SOLO CN", "path": "%APPDATA%\\TRAE SOLO CN", "kind": "app-data", "role": "detail", "parentId": "roaming-appdata" },

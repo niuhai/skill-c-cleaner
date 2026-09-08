@@ -1,6 +1,6 @@
 ---
 name: "c-drive-cleaner"
-description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实际分配空间测量、父子目录去重、应用级增长与清理后再生追踪、Windows 更新残留、不常用软件和零碎空间盘点，定位空间为何增长及清理为何无效。当用户询问C盘空间不足、清理不动、可用空间未增加、缓存重新生成、想查不常用软件/大文件/隐藏占用、迁移数据或复盘清理效果时调用此技能。"
+description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实际分配空间测量、父子目录去重、应用级增长与清理后再生追踪、厂商托管缓存/工具链、Windows 更新残留、不常用软件和零碎空间盘点，定位空间为何增长及清理为何无效。当用户询问C盘空间不足、清理不动、可用空间未增加、缓存重新生成、想查不常用软件/大文件/隐藏占用、迁移数据或复盘清理效果时调用此技能。"
 ---
 
 ## AI 软件生命周期（AF 类）
@@ -30,6 +30,12 @@ description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实
 - `U` 类按安装日期、体积和证据质量列出“待确认候选”；快速模式只复用卸载注册表体积，完整模式仅为可能相关的 C 盘安装目录补测体积，不遍历 D/E 盘软件。它不能可靠知道最后使用时间，不自动卸载，也不建议直接删除安装目录。
 - `MX` 类解释清理规则之外的空间：C 盘一级目录、根目录系统文件、用户目录一级散落文件、扩展名分布和权限盲区。MX 是信息层，结果之间可能重叠，不能把它们相加当成可释放空间。
 - 详细边界和判定依据见 [`references/unused-and-misc.md`](references/unused-and-misc.md)。
+
+## 厂商托管存储（MS 类）
+
+- `MS` 识别“确实可管理、但不应由通用 cleaner 直接删除”的大目录。当前覆盖 WPS 云文档本地缓存和 ESP-IDF 下载归档。
+- WPS 必须先确认同步完成，再使用客户端“释放空间/更换位置”；ESP-IDF 优先运行当前版本 `idf_tools.py uninstall --dry-run --remove-archives`，并始终保留 `tools` 与 `python_env`。
+- `MS` 只产生谨慎项，没有直接 cleaner。详细边界和官方入口见 [`references/vendor-managed-storage.md`](references/vendor-managed-storage.md)。
 
 ## 实际占用与再生追踪
 
@@ -135,6 +141,7 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 | C-开发缓存 | scan-dev-caches | npm/pip/cargo/maven/gradle等 | 开发者必看 |
 | D-浏览器 | scan-browsers | Chrome/Edge/Firefox等 | 所有人 |
 | E-应用数据 | scan-app-data | IDE/媒体/办公/AI工具 | 深度清理 |
+| MS-厂商托管存储 | scan-managed-storage | WPS 云缓存、ESP-IDF 下载归档 | 只走厂商 UI/CLI，不直接删除 |
 | F-大文件 | scan-large-files | 原生并发 TOP 20 + 用户目录排行 + 增长聚合 | 快速定位 |
 | G-特殊占用 | scan-special-sources | Docker/WSL/游戏平台 | 特殊需求 |
 | H-安全软件 | scan-security-software | EDR/NAC/杀毒 | 仅了解 |
@@ -188,12 +195,13 @@ c-drive-cleaner/
 ├── _common.ps1                 ← 公共模块（性能+统一接口）
 ├── analyze.ps1                 ← 一键入口（console/markdown/json）
 │
-├── scanners/   (类别只读扫描，含 GR/U/MX/WU/AD/SA)
+├── scanners/   (类别只读扫描，含 AF/MS/GR/U/MX/WU/AD/SA)
 ├── cleaners/   (含 AF 精确组件清理；默认预览并统一走删除门禁)
 ├── migrators/  (含 AF 只读迁移规划以及 appdata/dev-caches/wsl-docker)
 ├── extensions/
 │   ├── app-signatures.json     ← 100+ 应用签名（14类别）
 │   ├── ai-footprints.json      ← AI 软件根、生命周期策略和精确组件规则
+│   ├── managed-storage.json    ← 只能走厂商 UI/CLI 的本地缓存与下载归档
 │   ├── user-custom.json        ← 用户自定义签名
 │   └── scan-discover.ps1       ← 未知应用发现引擎
 ├── safety/     (备份+快照+回滚)
@@ -340,7 +348,13 @@ c-drive-cleaner/
 - AF terminology now states its measurement basis precisely: logical file lengths physically located on C with reparse targets excluded. NTFS allocated bytes and real free-space changes remain cleanup-session/SA evidence.
 - Measured on this machine: 19 configured groups, 15 detected, 29.01 GB C-located logical footprint, 4.47 GB safe, 3.82 GB managed/confirm, 21.67 GB migration candidates, zero unexplained hotspots above 100 MB, and 0 skipped directories. The latest warm native pass took 4.8 seconds.
 
-*CleanSight v7.1.0 — AI Disk Health Advisor*
+## v7.2.0 vendor-managed storage and scan reuse note
+
+- `MS` separates vendor-managed storage from direct cleanup. WPS cloud cache must go through sync-aware WPS controls; ESP-IDF archive cleanup must go through its version-aware tool flow. Neither source has a direct cleaner.
+- On this machine, NTFS accounting confirmed 18.504 GB for the exact WPS `cachedata` path and 5.123 GB for `.espressif`; only the 1.150 GB `dist` archive area is surfaced for ESP-IDF review, while `tools` and `python_env` remain preserved.
+- F now seeds exact aggregate measurements into the shared cache. MX batches only remaining root directories, reducing measured `F,MX` runs from 65.3 seconds to 15.2–16.1 seconds and MX itself from 48.0 seconds to about 0.9 seconds.
+
+*CleanSight v7.2.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
 ## 虚拟内存强化规则（VM）
 

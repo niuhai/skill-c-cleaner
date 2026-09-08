@@ -10,7 +10,7 @@ $SkillRoot = Split-Path -Parent $PSCommandPath
 if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
 . (Join-Path $SkillRoot "_common.ps1")
 
-$VERSION = "7.1.0"
+$VERSION = "7.2.0"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 $Global:CDriveInventory = [System.Collections.ArrayList]::new()
@@ -114,6 +114,7 @@ $allCats = @(
     @{ Code = "C"; Script = "scan-dev-caches.ps1" }
     @{ Code = "D"; Script = "scan-browsers.ps1" }
     @{ Code = "E"; Script = "scan-app-data.ps1" }
+    @{ Code = "MS"; Script = "scan-managed-storage.ps1" }
     @{ Code = "F"; Script = "scan-large-files.ps1" }
     @{ Code = "G"; Script = "scan-special-sources.ps1" }
     @{ Code = "H"; Script = "scan-security-software.ps1" }

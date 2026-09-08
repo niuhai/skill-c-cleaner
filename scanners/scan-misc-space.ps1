@@ -8,7 +8,9 @@ if (-not (Get-Command "Write-InventoryResult" -ErrorAction SilentlyContinue)) {
 Write-Host "===== MX: miscellaneous C drive inventory =====" -ForegroundColor Cyan
 Write-Host "This explains space; it is not a disk-defragmentation or delete list." -ForegroundColor DarkGray
 
+$mxWatch = [Diagnostics.Stopwatch]::StartNew()
 $rootDirs = @(Get-ChildItem -LiteralPath "C:\" -Force -Directory -ErrorAction SilentlyContinue)
+$plan = Invoke-PathMeasurementPlan -Paths @($rootDirs.FullName) -Parallelism 4
 $rootRows = @()
 foreach ($dir in $rootDirs) {
     $size = Get-FolderSizeFast $dir.FullName
@@ -73,6 +75,15 @@ foreach ($path in $protectedPaths) {
         Write-InventoryResult -Category "MX-permission-gap" -Name "protected directory" -Size 0 `
             -Path $path -Kind "permission-gap" -Evidence "administrator permission may be required" -Access "inaccessible"
     }
+}
+
+$mxWatch.Stop()
+if ($null -eq $Global:CDriveScannerMetadata) { $Global:CDriveScannerMetadata = @{} }
+$Global:CDriveScannerMetadata['MX'] = [pscustomobject]@{
+    schema=1; elapsed_seconds=[math]::Round($mxWatch.Elapsed.TotalSeconds,3)
+    root_directories=$rootDirs.Count; batch_requested=$plan.Requested; cache_hits_before_batch=$plan.CachedBefore
+    batch_seeded=$plan.Seeded; batch_seconds=$plan.Seconds
+    accounting='inventory only; root totals may be partial and are never summed as cleanup capacity'
 }
 
 Write-Host "MX findings are inventory only and are excluded from cleanup totals." -ForegroundColor Yellow

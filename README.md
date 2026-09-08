@@ -15,7 +15,7 @@
   </p>
   
   <p align="center">
-    <img src="https://img.shields.io/badge/version-v7.1.0-blue.svg" alt="Version"/>
+    <img src="https://img.shields.io/badge/version-v7.2.0-blue.svg" alt="Version"/>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
     <img src="https://img.shields.io/badge/powershell-5.1%2B-blue.svg" alt="PowerShell"/>
     <img src="https://img.shields.io/badge/platform-windows-lightgrey.svg" alt="Platform"/>
@@ -59,7 +59,7 @@ E-应用数据 │ F-大文件   │ G-特殊占用 │ H-安全软件
 I-多版本   │ J-重复运行时│ K-输入法   │ L-即时通讯
 ```
 
-扩展诊断还包括 AF-AI 软件生命周期、VM-虚拟内存、SI-搜索索引、O-定向优化、GR-增长追踪、U-不常用软件、MX-零碎空间、WU-更新残留、AD-管理员深度核算和 SA-NTFS 实际占用。AF 会把安装、runtime、模型、扩展、索引、状态和更新残留拆开核算；`AD`/`SA` 都是按需解释层，不进入自动清理额度。
+扩展诊断还包括 AF-AI 软件生命周期、MS-厂商托管存储、VM-虚拟内存、SI-搜索索引、O-定向优化、GR-增长追踪、U-不常用软件、MX-零碎空间、WU-更新残留、AD-管理员深度核算和 SA-NTFS 实际占用。AF 会把安装、runtime、模型、扩展、索引、状态和更新残留拆开核算；MS 只路由到厂商 UI/CLI；`AD`/`SA` 都是按需解释层，不进入自动清理额度。
 
 ### 📊 现象级报告系统（v6 AI Decision Edition）
 
@@ -112,6 +112,8 @@ cd skill-c-cleaner
 ```
 
 v7.1 的 AF 生命周期层覆盖 19 类 AI 工具：本机一遍扫描约 29.01 GB 位于 C 盘的逻辑字节，分别给出 4.47 GB 安全缓存、3.82 GB 需确认项、21.67 GB 迁移候选和按“未解释字节”计算的学习队列。逻辑字节不冒充 NTFS 实际分配空间；执行清理时以 cleanup session 的 allocated bytes 与盘符可用空间变化为准。所有正式 cleaner 统一拒绝根目录、越界路径、非 C 卷及任意祖先 junction/符号链接。
+
+v7.2 新增 `MS` 厂商托管存储层。本机试验发现 WPS 精确 `cachedata` 实际分配 18.504 GB、ESP-IDF 精确 `dist` 实际分配 1.150 GB；两者只给出厂商 UI/CLI 管理入口，不进入直接 cleaner。F 全盘扫描现在会把同遍聚合结果回填共享缓存，`F,MX` 总耗时从 65.3 秒降至 15.2–16.1 秒，其中 MX 从 48.0 秒降至约 0.9 秒。
 
 ### 示例输出
 
@@ -395,7 +397,7 @@ c-drive-cleaner/
 ### 规划中 📋
 - [ ] 后续版本: Web Dashboard（可视化界面）
 - [ ] 后续版本: 多盘符支持（D/E/F 盘）
-- [ ] v7.2: 企业版（合规性 + 策略管理）
+- [ ] 后续版本: 企业版（合规性 + 策略管理）
 - [ ] v8.0: 社区平台（签名共享 + 排行榜）
 
 ---

@@ -12,6 +12,8 @@ tests/
 ├── README.md                       ← 你在这里
 ├── TEST-RESULTS-LOG.md             ← 真实测试结果日志（持续追加）
 ├── IDEA-LOG.md                     ← 想法、创意、优化追踪（持续更新）
+├── validate-managed-storage.ps1    ← 厂商托管存储结构、只读行为与无直接 cleaner 验证
+├── validate-scan-reuse.ps1         ← F 全盘聚合向 MX 共享测量缓存的报告验证
 │
 ├── methodology/                     ← 测试方法论
 │   └── test-strategies.md          ← 各模式测试方法说明

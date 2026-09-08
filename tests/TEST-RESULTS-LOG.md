@@ -5,6 +5,24 @@
 
 ---
 
+## 测试批次 17：v7.2 厂商托管存储与扫描复用（2026-09-08）
+
+| 验证项 | 结果 |
+|--------|------|
+| C 盘基线 | 148.91 GB 总计、130.40 GB 已用、18.51 GB 可用，使用率 87.6% |
+| 快速证据集 | v7.1 基线 17.4 秒/safe 5.94 GB/cautious 8.68 GB；v7.2 为 18.2 秒/safe 5.94 GB/cautious 28.34 GB |
+| WPS 云缓存 | 精确 `cachedata` 18.504 GB logical / allocated；153 文件、0 硬链接重复、0 稀疏/压缩；WPS/wpscloudsvr 活跃 |
+| ESP-IDF | `.espressif` 5.123 GB allocated：tools 3.90 GB、dist 1.150 GB/12 文件、python_env 0.08 GB；官方 dry-run 退出码 0 |
+| MS 扫描 | 0.1 秒；WPS + ESP-IDF dist 共 19.65 GB，全部 cautious，directCleanerAvailable=false |
+| F 全盘 | 663,558 文件、123,003 目录、109 个权限跳过；F 14.3 秒，覆盖 partial |
+| MX 加速 | 修改前 48.0 秒；复用 F 的 5 个大根并批量核算剩余 23 个根后 0.9 秒 |
+| F+MX 总耗时 | 65.3 秒降至 15.2–16.1 秒；同轮 F 缓存写入 37 个精确聚合 |
+| 新测试 | managed-storage 20 条基础约束、带实机报告 26 条约束通过；F→MX 复用报告 8 条约束通过 |
+
+本轮扫描、NTFS 核算和厂商 CLI 均为只读/dry-run，没有删除、移动或修改 WPS、ESP-IDF 与用户数据。
+
+---
+
 ## 测试批次 16：v7.1 未解释字节与 AI 软件补漏（2026-09-08）
 
 | 验证项 | 结果 |

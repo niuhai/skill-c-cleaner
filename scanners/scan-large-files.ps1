@@ -162,6 +162,19 @@ $Global:CDriveNativePathTotalsMetadata = @{
     coverage = "visible C drive excluding protected/system-accounting roots and reparse targets"
 }
 
+# Reuse exact aggregates from the full C pass in later scanners. This avoids
+# rescanning Users/Windows/Program Files when F and MX run together.
+$seededMeasurements = 0
+foreach ($total in @($scan.PathTotals)) {
+    if (-not $total.Path) { continue }
+    $status = if (-not $total.Seen) { 'missing' } elseif ($total.Partial) { 'partial' } else { 'ok' }
+    $Global:CDriveMeasurementCache[(Get-MeasurementCacheKey -Path ([string]$total.Path))] = [pscustomobject]@{
+        Path=[string]$total.Path; Status=$status; Bytes=[int64]$total.Bytes; FileCount=[int64]$total.FileCount
+        Evidence="Reused from F full-drive Win32 pass; partial=$([bool]$total.Partial)"
+    }
+    $seededMeasurements++
+}
+
 Write-Host ""
 Write-Host "Rank  Size       Path" -ForegroundColor White
 Write-Host "----  ---------  ----" -ForegroundColor White
@@ -247,6 +260,7 @@ $Global:CDriveScannerMetadata["F"] = @{
     reparse_roots_excluded = @($reparseRoots)
     partitions = $specs.Count
     aggregate_targets = $growthPathSpecs.Count
+    measurement_cache_seeded = $seededMeasurements
     parallelism = $Parallelism
     coverage = $coverageStatus
 }

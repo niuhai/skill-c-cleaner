@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "sources": [
+    {
+      "id": "wps-cloud-cache",
+      "name": "WPS 云文档本地缓存",
+      "path": "%USERPROFILE%\\WPS Cloud Files\\.*\\cachedata",
+      "kind": "cloud-offline-cache",
+      "risk": "cautious",
+      "action": "vendor-ui",
+      "processes": ["wps", "wpscloudsvr"],
+      "minimumMB": 10,
+      "advice": "先确认云端同步完成，再在 WPS 云盘设置中使用“释放空间”；不要直接删除正在上传的文件。",
+      "migration": "在 WPS 全局设置 → 存储管理中更改“云文档缓存”位置，并按客户端指引迁移。",
+      "note": "仅由厂商界面管理；缓存会按访问重新下载，未完成上传可能尚无云端副本。",
+      "officialDocs": [
+        "https://www.wps.cn/learning/question/detail/id/333345",
+        "https://www.wps.cn/learning/question/detail/id/335637"
+      ]
+    },
+    {
+      "id": "esp-idf-dist",
+      "name": "ESP-IDF 下载归档",
+      "path": "%USERPROFILE%\\.espressif\\dist",
+      "pathEnv": "IDF_TOOLS_PATH",
+      "relative": "dist",
+      "kind": "downloaded-tool-archives",
+      "risk": "cautious",
+      "action": "vendor-cli",
+      "processes": ["idf", "openocd", "xtensa-esp-elf-gcc", "riscv32-esp-elf-gcc"],
+      "minimumMB": 10,
+      "advice": "从当前 ESP-IDF 版本运行 idf_tools.py uninstall --dry-run --remove-archives；核对输出后再去掉 --dry-run。不得删除 tools 或 python_env。",
+      "migration": "后续安装前设置 IDF_TOOLS_PATH；Python 环境可另用 IDF_PYTHON_ENV_PATH。已有安装应通过安装管理器或重装迁移。",
+      "note": "dist 是安装器下载归档；当前工具链位于 tools，虚拟环境位于 python_env。",
+      "officialDocs": [
+        "https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/tools/idf-tools.html"
+      ]
+    }
+  ]
+}
