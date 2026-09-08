@@ -3,6 +3,16 @@ name: "c-drive-cleaner"
 description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实际分配空间测量、父子目录去重、应用级增长与清理后再生追踪、Windows 更新残留、不常用软件和零碎空间盘点，定位空间为何增长及清理为何无效。当用户询问C盘空间不足、清理不动、可用空间未增加、缓存重新生成、想查不常用软件/大文件/隐藏占用、迁移数据或复盘清理效果时调用此技能。"
 ---
 
+## AI 软件生命周期（AF 类）
+
+当“清理不动”或 AI 软件持续吃 C 盘时，先运行 `./analyze.ps1 -Categories AF -OutputFormat json -RecordGrowth`。AF 用一遍原生扫描核算安装目录、Electron 会话数据、runtime、模型、扩展、索引、状态和更新残留，并严格拆成四类：安全缓存、工具/人工管理项、必须保留项、待研究项。
+
+- 整个应用目录永远只是占用证据，不等于可清理额度；只有 `extensions/ai-footprints.json` 中精确声明的组件可以进入清理候选。
+- `scanner_metadata.AF.discovery_candidates` 是实机学习队列。大而未分类的子目录只能进入 `review`，经过来源核验与复扫测试后才能晋级为清理规则。
+- `./cleaners/clean-ai-footprints.ps1` 默认预览；追加 `-ReallyDelete` 才执行，并对活跃进程、C 盘边界和重解析点 fail closed。
+- `./migrators/plan-ai-footprints.ps1` 从最新 AF 报告生成只读迁移方案。官方环境变量/CLI 优先，安装器/系统设置其次，junction 最后；迁移与缓存额度可能重叠，不能相加。
+- 详细闭环、晋级门禁与上游依据见 [`references/ai-software-lifecycle.md`](references/ai-software-lifecycle.md)。
+
 ## 定向优化（O 类）
 
 运行 `.\analyze.ps1 -Categories "O"` 扫描已知的高价值定向项：
@@ -108,6 +118,7 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 .\analyze.ps1 -OutputFormat markdown                   # 生成 Markdown 报告
 .\analyze.ps1 -OutputFormat json                       # JSON 格式
 .\analyze.ps1 -Categories "C,D"                        # 只扫描开发缓存+浏览器
+.\analyze.ps1 -Categories "AF" -RecordGrowth           # AI 软件全生命周期占用 + 增长基线
 .\analyze.ps1 -Fast                                     # 快速证据集；GR 读取带时间戳快照，跳过 F/H/MX/AD/SA
 .\analyze.ps1 -Categories "F,GR" -RecordGrowth          # 原生全盘扫描并建立同源增长基线
 .\track-growth.ps1 -Mode compare -Record               # 无 F 结果时的 robocopy 兼容基线
@@ -118,6 +129,7 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 
 | 类别 | 脚本 | 覆盖 | 适用 |
 |------|------|------|------|
+| AF-AI生命周期 | scan-ai-footprints | 安装/runtime/模型/扩展/索引/状态/更新残留 | AI 软件持续增长首选 |
 | A-系统隐藏 | scan-system-hidden | hiberfil/pagefile/还原点/WinSxS | 了解即可 |
 | B-临时缓存 | scan-temp-files | Temp/缩略图/回收站/Update缓存 | ✅ 日常首选 |
 | C-开发缓存 | scan-dev-caches | npm/pip/cargo/maven/gradle等 | 开发者必看 |
@@ -177,10 +189,11 @@ c-drive-cleaner/
 ├── analyze.ps1                 ← 一键入口（console/markdown/json）
 │
 ├── scanners/   (类别只读扫描，含 GR/U/MX/WU/AD/SA)
-├── cleaners/   (5个清理: safe/deep/dev-caches/apps/targeted)
-├── migrators/  (3个迁移: appdata/dev-caches/wsl-docker)
+├── cleaners/   (含 AF 精确组件清理；默认预览并统一走删除门禁)
+├── migrators/  (含 AF 只读迁移规划以及 appdata/dev-caches/wsl-docker)
 ├── extensions/
 │   ├── app-signatures.json     ← 100+ 应用签名（14类别）
+│   ├── ai-footprints.json      ← AI 软件根、生命周期策略和精确组件规则
 │   ├── user-custom.json        ← 用户自定义签名
 │   └── scan-discover.ps1       ← 未知应用发现引擎
 ├── safety/     (备份+快照+回滚)
@@ -312,7 +325,15 @@ c-drive-cleaner/
 - `AD` adds administrator-only, read-only accounting for VSS, WinSxS, WindowsApps, Installer, DriverStore, and Reserved Storage. Protected-store values remain inventory-only.
 - Measured on this machine: `-Fast` completed 16 categories in 5.7-5.9 seconds; the planner seeded 88 unique paths and all 91 downstream logical measurements were cache hits.
 
-*CleanSight v6.7.0 — AI Disk Health Advisor*
+## v7.0.0 AI software lifecycle and live-learning note
+
+- `AF` accounts for physical C-drive AI footprints across installs, Electron profiles, runtimes, models, extensions, indexes, state and updater residue in one native pass. Whole roots stay inventory-only; only exact configured components enter cleanup totals.
+- The report exposes a non-destructive learning queue for large unclassified children. A discovery remains `review` until its semantics, safety and repeated measurements justify a config change.
+- The AF cleaner defaults to preview, blocks active applications and reparse ancestry, and writes before/after cleanup sessions. The migration planner is read-only and prefers official environment variables or vendor lifecycle commands.
+- Empty optional regex arrays are normalized explicitly so they can never match every installed package. The release test covers configuration structure, preservation invariants and this regression.
+- Measured on this machine after one discovery/classification round: 27.78 GB of physical AI footprint, 4.31 GB explicit safe cache, 3.52 GB managed/confirm items, 20.74 GB migration candidates and 5 remaining review hotspots; AF completed in 11.5 seconds (7.4 seconds native enumeration).
+
+*CleanSight v7.0.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
 ## 虚拟内存强化规则（VM）
 

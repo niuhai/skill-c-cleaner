@@ -1,0 +1,231 @@
+{
+  "schema": 1,
+  "measurementVersion": 1,
+  "retentionDays": 90,
+  "minimumDisplayMB": 5,
+  "discoveryMinimumMB": 100,
+  "applications": [
+    {
+      "id": "trae-cn",
+      "name": "Trae CN",
+      "registryPatterns": ["^TraeCode CN"],
+      "processes": ["Trae CN", "Trae"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\Trae CN", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "agent-profile", "path": "%USERPROFILE%\\.trae-cn", "kind": "agent-runtime", "policy": "mixed", "relocation": "junction-cautious" }
+      ],
+      "components": [
+        { "id": "cached-data", "rootId": "roaming", "relative": "CachedData", "kind": "version-cache", "action": "safe-clean", "risk": "safe", "note": "版本化缓存，可由应用重建" },
+        { "id": "cache", "rootId": "roaming", "relative": "Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "code-cache", "rootId": "roaming", "relative": "Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "gpu-cache", "rootId": "roaming", "relative": "GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "crash-reports", "rootId": "roaming", "relative": "Crashpad\\reports", "kind": "crash-report", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-cache", "rootId": "roaming", "relative": "Partitions\\*\\Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-code-cache", "rootId": "roaming", "relative": "Partitions\\*\\Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-gpu-cache", "rootId": "roaming", "relative": "Partitions\\*\\GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "logs", "rootId": "roaming", "relative": "logs", "kind": "logs", "action": "safe-clean", "risk": "safe" },
+        { "id": "user-state", "rootId": "roaming", "relative": "User", "kind": "user-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "modular-data", "rootId": "roaming", "relative": "ModularData", "kind": "agent-state-and-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "workspace-storage", "rootId": "roaming", "relative": "User\\workspaceStorage", "kind": "workspace-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "history", "rootId": "roaming", "relative": "User\\History", "kind": "user-history", "action": "preserve", "risk": "forbidden" },
+        { "id": "agent-database", "rootId": "roaming", "relative": "ModularData\\ai-agent\\database.db", "kind": "agent-database", "action": "preserve", "risk": "forbidden" },
+        { "id": "agent-extensions", "rootId": "agent-profile", "relative": "extensions", "kind": "extensions", "action": "preserve", "risk": "forbidden" }
+      ]
+    },
+    {
+      "id": "trae-solo-cn",
+      "name": "TRAE SOLO CN",
+      "registryPatterns": ["^TraeWork CN"],
+      "processes": ["TRAE SOLO CN", "TraeWork CN"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\TRAE SOLO CN", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" }
+      ],
+      "components": [
+        { "id": "cached-data", "rootId": "roaming", "relative": "CachedData", "kind": "version-cache", "action": "safe-clean", "risk": "safe", "note": "版本化缓存，可由应用重建" },
+        { "id": "cache", "rootId": "roaming", "relative": "Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "code-cache", "rootId": "roaming", "relative": "Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "gpu-cache", "rootId": "roaming", "relative": "GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "crash-reports", "rootId": "roaming", "relative": "Crashpad\\reports", "kind": "crash-report", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-cache", "rootId": "roaming", "relative": "Partitions\\*\\Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-code-cache", "rootId": "roaming", "relative": "Partitions\\*\\Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-gpu-cache", "rootId": "roaming", "relative": "Partitions\\*\\GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "logs", "rootId": "roaming", "relative": "logs", "kind": "logs", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-service-worker-cache", "rootId": "roaming", "relative": "Partitions\\*\\Service Worker\\CacheStorage", "kind": "service-worker-cache", "action": "managed-clean", "risk": "cautious", "note": "浏览器离线缓存；关闭应用后清理，首次打开会重建" },
+        { "id": "user-state", "rootId": "roaming", "relative": "User", "kind": "user-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "modular-data", "rootId": "roaming", "relative": "ModularData", "kind": "agent-state-and-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "workspace-storage", "rootId": "roaming", "relative": "User\\workspaceStorage", "kind": "workspace-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "history", "rootId": "roaming", "relative": "User\\History", "kind": "user-history", "action": "preserve", "risk": "forbidden" },
+        { "id": "agent-database", "rootId": "roaming", "relative": "ModularData\\ai-agent\\database.db", "kind": "agent-database", "action": "preserve", "risk": "forbidden" }
+      ]
+    },
+    {
+      "id": "trae-global",
+      "name": "Trae",
+      "registryPatterns": ["^Trae \\(User\\)$"],
+      "processes": ["Trae"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\Trae", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "agent-profile", "path": "%USERPROFILE%\\.trae", "kind": "agent-profile", "policy": "mixed", "relocation": "junction-cautious" }
+      ],
+      "components": [
+        { "id": "cached-data", "rootId": "roaming", "relative": "CachedData", "kind": "version-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "cache", "rootId": "roaming", "relative": "Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "code-cache", "rootId": "roaming", "relative": "Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "gpu-cache", "rootId": "roaming", "relative": "GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "logs", "rootId": "roaming", "relative": "logs", "kind": "logs", "action": "safe-clean", "risk": "safe" },
+        { "id": "crash-reports", "rootId": "roaming", "relative": "Crashpad\\reports", "kind": "crash-report", "action": "safe-clean", "risk": "safe" },
+        { "id": "cached-extension-vsix", "rootId": "roaming", "relative": "CachedExtensionVSIXs", "kind": "extension-package-cache", "action": "managed-clean", "risk": "cautious", "note": "扩展安装包缓存；确认无需离线回滚后处理" },
+        { "id": "extensions", "rootId": "agent-profile", "relative": "extensions", "kind": "extensions", "action": "preserve", "risk": "forbidden" },
+        { "id": "builtin", "rootId": "agent-profile", "relative": "builtin", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "attachments", "rootId": "agent-profile", "relative": "attachments", "kind": "conversation-attachments", "action": "review", "risk": "cautious" }
+      ]
+    },
+    {
+      "id": "qoder",
+      "name": "Qoder",
+      "registryPatterns": ["^Qoder IDE"],
+      "processes": ["Qoder", "Qoder IDE"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\Qoder", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "profile", "path": "%USERPROFILE%\\.qoder", "kind": "agent-profile", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "wake-runtime", "path": "%USERPROFILE%\\.qoderwake", "kind": "agent-runtime", "policy": "preserve", "relocation": "junction-cautious" },
+        { "id": "updater", "path": "%LOCALAPPDATA%\\qoder-work-updater", "kind": "update-residue", "policy": "managed-clean" }
+      ],
+      "components": [
+        { "id": "shared-index", "rootId": "roaming", "relative": "SharedClientCache\\index", "kind": "index-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "shared-cache", "rootId": "roaming", "relative": "SharedClientCache\\cache", "kind": "cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "cached-data", "rootId": "roaming", "relative": "CachedData", "kind": "version-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "workspace-storage", "rootId": "roaming", "relative": "User\\workspaceStorage", "kind": "workspace-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "history", "rootId": "roaming", "relative": "User\\History", "kind": "user-history", "action": "preserve", "risk": "forbidden" },
+        { "id": "extensions", "rootId": "profile", "relative": "extensions", "kind": "extensions", "action": "preserve", "risk": "forbidden" },
+        { "id": "updater-pending", "rootId": "updater", "relative": "pending", "kind": "update-residue", "action": "managed-clean", "risk": "cautious" },
+        { "id": "updater-installer", "rootId": "updater", "relative": "installer.exe", "kind": "update-residue", "action": "managed-clean", "risk": "cautious" }
+      ]
+    },
+    {
+      "id": "qoder-work",
+      "name": "QoderWork",
+      "registryPatterns": ["^QoderWork$"],
+      "processes": ["QoderWork"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\QoderWork", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "profile", "path": "%USERPROFILE%\\.qoderwork", "kind": "agent-profile", "policy": "mixed", "relocation": "junction-cautious" }
+      ],
+      "components": [
+        { "id": "workspace", "rootId": "profile", "relative": "workspace", "kind": "workspace-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "projects", "rootId": "profile", "relative": "projects", "kind": "project-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "profile-bin", "rootId": "profile", "relative": "bin", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "profile-dot-bin", "rootId": "profile", "relative": ".bin", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "roaming-cli", "rootId": "roaming", "relative": "cli", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" }
+      ]
+    },
+    {
+      "id": "workbuddy",
+      "name": "WorkBuddy",
+      "registryPatterns": ["^WorkBuddy"],
+      "processes": ["WorkBuddy"],
+      "roots": [
+        { "id": "profile", "path": "%USERPROFILE%\\.workbuddy", "kind": "agent-profile", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "updater", "path": "%LOCALAPPDATA%\\@genieworkbuddy-desktop-updater", "kind": "update-residue", "policy": "managed-clean" },
+        { "id": "local", "path": "%LOCALAPPDATA%\\WorkBuddy", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" },
+        { "id": "roaming", "path": "%APPDATA%\\WorkBuddy", "kind": "user-data", "policy": "mixed", "relocation": "junction-cautious" }
+      ],
+      "components": [
+        { "id": "traces", "rootId": "profile", "relative": "traces", "kind": "diagnostic-traces", "action": "safe-clean", "risk": "safe" },
+        { "id": "logs", "rootId": "profile", "relative": "logs", "kind": "logs", "action": "safe-clean", "risk": "safe" },
+        { "id": "shell-snapshots", "rootId": "profile", "relative": "shell-snapshots", "kind": "shell-snapshots", "action": "review", "risk": "cautious" },
+        { "id": "workspace", "rootId": "profile", "relative": "workspace", "kind": "workspace-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "projects", "rootId": "profile", "relative": "projects", "kind": "project-state", "action": "preserve", "risk": "forbidden" },
+        { "id": "binaries", "rootId": "profile", "relative": "binaries", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "app-runtime", "rootId": "profile", "relative": "app", "kind": "bundled-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "plugins", "rootId": "profile", "relative": "plugins", "kind": "plugins", "action": "preserve", "risk": "forbidden" },
+        { "id": "updater-installer", "rootId": "updater", "relative": "installer.exe", "kind": "update-residue", "action": "managed-clean", "risk": "cautious" }
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "appxPatterns": ["^OpenAI\\.Codex$"],
+      "processes": ["ChatGPT", "codex", "codex-code-mode-host", "codex-command-runner"],
+      "roots": [
+        { "id": "primary-runtime-cache", "path": "%USERPROFILE%\\.cache\\codex-runtimes", "kind": "runtime-cache", "policy": "mixed" },
+        { "id": "agent-data", "path": "%USERPROFILE%\\.codex", "kind": "agent-data", "policy": "preserve", "relocation": "vendor-only" },
+        { "id": "local", "path": "%LOCALAPPDATA%\\OpenAI", "kind": "installed-runtime", "policy": "preserve" },
+        { "id": "roaming", "path": "%APPDATA%\\Codex", "kind": "browser-profile", "policy": "mixed" }
+      ],
+      "components": [
+        { "id": "old-runtime-install", "rootId": "primary-runtime-cache", "relative": "codex-runtime-install-*", "kind": "old-runtime", "action": "managed-clean", "risk": "cautious", "note": "关闭 Codex 后清理；可能按需重新下载" },
+        { "id": "previous-runtime", "rootId": "primary-runtime-cache", "relative": "codex-primary-runtime.previous-*", "kind": "old-runtime", "action": "managed-clean", "risk": "cautious" },
+        { "id": "current-runtime", "rootId": "primary-runtime-cache", "relative": "codex-primary-runtime", "kind": "current-runtime", "action": "preserve", "risk": "forbidden" },
+        { "id": "browser-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "browser-code-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "browser-gpu-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-code-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-gpu-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-dawn-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\Dawn*Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "partition-service-worker-cache", "rootId": "roaming", "relative": "web\\Codex\\Default\\Partitions\\*\\Service Worker\\CacheStorage", "kind": "service-worker-cache", "action": "managed-clean", "risk": "cautious", "note": "浏览器离线缓存；关闭 Codex 后清理并验证会话" },
+        { "id": "component-crx-cache", "rootId": "roaming", "relative": "web\\Codex\\component_crx_cache", "kind": "component-cache", "action": "managed-clean", "risk": "cautious", "note": "Chromium 组件包缓存；关闭 Codex 后处理" },
+        { "id": "crash-reports", "rootId": "roaming", "relative": "web\\Codex\\Crashpad\\reports", "kind": "crash-report", "action": "safe-clean", "risk": "safe" }
+      ]
+    },
+    {
+      "id": "playwright",
+      "name": "Playwright browsers",
+      "processes": ["playwright"],
+      "roots": [
+        { "id": "browsers", "path": "%LOCALAPPDATA%\\ms-playwright", "pathEnv": "PLAYWRIGHT_BROWSERS_PATH", "kind": "browser-runtime", "policy": "managed-cli", "relocation": "official-env", "migrationKey": "PLAYWRIGHT_BROWSERS_PATH", "inspectCommand": "npx playwright install --list", "cleanupCommand": "npx playwright uninstall" }
+      ],
+      "components": []
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "registryPatterns": ["^Ollama"],
+      "processes": ["ollama", "ollama app"],
+      "roots": [
+        { "id": "models", "path": "%USERPROFILE%\\.ollama\\models", "pathEnv": "OLLAMA_MODELS", "kind": "models", "policy": "managed-cli", "relocation": "official-env", "migrationKey": "OLLAMA_MODELS", "inspectCommand": "ollama list", "cleanupCommand": "ollama rm <model>" },
+        { "id": "local", "path": "%LOCALAPPDATA%\\Ollama", "kind": "logs-and-updates", "policy": "mixed" }
+      ],
+      "components": [
+        { "id": "logs", "rootId": "local", "relative": "*.log", "kind": "logs", "action": "safe-clean", "risk": "safe" }
+      ]
+    },
+    {
+      "id": "hugging-face",
+      "name": "Hugging Face",
+      "processes": [],
+      "roots": [
+        { "id": "home", "path": "%USERPROFILE%\\.cache\\huggingface", "pathEnv": "HF_HOME", "kind": "models-and-assets", "policy": "managed-cli", "relocation": "official-env", "migrationKey": "HF_HOME", "inspectCommand": "hf cache ls --sort size", "cleanupCommand": "hf cache prune --dry-run" }
+      ],
+      "components": []
+    },
+    {
+      "id": "local-ai-caches",
+      "name": "Local AI model caches",
+      "processes": [],
+      "roots": [
+        { "id": "torch", "path": "%USERPROFILE%\\.cache\\torch", "kind": "model-cache", "policy": "managed-clean", "relocation": "environment-or-library-config" },
+        { "id": "modelscope", "path": "%USERPROFILE%\\.cache\\modelscope", "kind": "model-cache", "policy": "managed-clean", "relocation": "environment-or-library-config" },
+        { "id": "whisper", "path": "%USERPROFILE%\\.cache\\whisper", "kind": "model-cache", "policy": "managed-clean", "relocation": "application-config" }
+      ],
+      "components": []
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "registryPatterns": ["^Cursor"],
+      "processes": ["Cursor"],
+      "roots": [
+        { "id": "roaming", "path": "%APPDATA%\\Cursor", "kind": "user-data", "policy": "mixed", "relocation": "cli-or-junction-cautious" },
+        { "id": "profile", "path": "%USERPROFILE%\\.cursor", "kind": "extensions-and-agent-data", "policy": "mixed", "relocation": "cli-or-junction-cautious" }
+      ],
+      "components": [
+        { "id": "cache", "rootId": "roaming", "relative": "Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "code-cache", "rootId": "roaming", "relative": "Code Cache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "gpu-cache", "rootId": "roaming", "relative": "GPUCache", "kind": "browser-cache", "action": "safe-clean", "risk": "safe" },
+        { "id": "extensions", "rootId": "profile", "relative": "extensions", "kind": "extensions", "action": "preserve", "risk": "forbidden" }
+      ]
+    }
+  ]
+}

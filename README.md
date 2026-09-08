@@ -15,7 +15,7 @@
   </p>
   
   <p align="center">
-    <img src="https://img.shields.io/badge/version-v6.7.0-blue.svg" alt="Version"/>
+    <img src="https://img.shields.io/badge/version-v7.0.0-blue.svg" alt="Version"/>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
     <img src="https://img.shields.io/badge/powershell-5.1%2B-blue.svg" alt="PowerShell"/>
     <img src="https://img.shields.io/badge/platform-windows-lightgrey.svg" alt="Platform"/>
@@ -59,7 +59,7 @@ E-应用数据 │ F-大文件   │ G-特殊占用 │ H-安全软件
 I-多版本   │ J-重复运行时│ K-输入法   │ L-即时通讯
 ```
 
-扩展诊断还包括 VM-虚拟内存、SI-搜索索引、O-定向优化、GR-增长追踪、U-不常用软件、MX-零碎空间、WU-更新残留、AD-管理员深度核算和 SA-NTFS 实际占用。`AD`/`SA` 都是按需解释层，不进入自动清理额度。
+扩展诊断还包括 AF-AI 软件生命周期、VM-虚拟内存、SI-搜索索引、O-定向优化、GR-增长追踪、U-不常用软件、MX-零碎空间、WU-更新残留、AD-管理员深度核算和 SA-NTFS 实际占用。AF 会把安装、runtime、模型、扩展、索引、状态和更新残留拆开核算；`AD`/`SA` 都是按需解释层，不进入自动清理额度。
 
 ### 📊 现象级报告系统（v6 AI Decision Edition）
 
@@ -102,9 +102,16 @@ cd skill-c-cleaner
 # 6. 日常快速扫描；完整 J 类仍可做 AppData 深度发现
 .\analyze.ps1 -Fast -OutputFormat json
 .\analyze.ps1 -Categories "J"
+
+# 7. AI 软件持续占用：一遍核算 + 建立应用级增长基线
+.\analyze.ps1 -Categories "AF" -OutputFormat json -RecordGrowth
+
+# 8. 预览精确 AF 清理项，以及生成只读迁移计划
+.\cleaners\clean-ai-footprints.ps1
+.\migrators\plan-ai-footprints.ps1
 ```
 
-v6.7 会先把所选类别的精确路径合并成一次有界原生测量计划，再由各扫描器复用缓存；本机 16 类快速扫描实测 5.7–5.9 秒，91 次后续测量全部命中缓存。所有正式 cleaner 统一拒绝根目录、越界路径、非 C 卷及任意祖先 junction/符号链接。管理员可按需运行 `.\analyze.ps1 -Categories "AD"`，只读解释 VSS、WinSxS、WindowsApps、Installer、DriverStore 和 Reserved Storage。
+v7.0 新增 AF 生命周期层：本机一遍扫描 27.78 GB AI 软件物理占用约 11.5 秒，并分别给出 4.31 GB 安全缓存、3.52 GB 需确认项、20.74 GB 迁移候选和 5 个待分类热点。所有正式 cleaner 统一拒绝根目录、越界路径、非 C 卷及任意祖先 junction/符号链接。管理员可按需运行 `.\analyze.ps1 -Categories "AD"`，只读解释 VSS、WinSxS、WindowsApps、Installer、DriverStore 和 Reserved Storage。
 
 ### 示例输出
 

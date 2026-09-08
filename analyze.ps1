@@ -10,7 +10,7 @@ $SkillRoot = Split-Path -Parent $PSCommandPath
 if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
 . (Join-Path $SkillRoot "_common.ps1")
 
-$VERSION = "6.7.0"
+$VERSION = "7.0.0"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 $Global:CDriveInventory = [System.Collections.ArrayList]::new()
@@ -70,6 +70,18 @@ function Get-AnalyzerMeasurementPlanPaths {
             'C:\Windows\Logs\CBS','C:\Windows\Logs\DISM'
         )) { [void]$paths.Add($path) }
     }
+    if ($codes -contains "AF") {
+        # AF measures every declared AI root and its nested components in one
+        # traversal, then seeds the shared cache. Do not pre-scan those child
+        # paths independently in the global planner.
+        $aiRoots = @(Resolve-AIFootprintConfiguredRoots | Where-Object {
+            try { [IO.Path]::GetPathRoot($_.Path) -eq 'C:\' } catch { $false }
+        })
+        return @($paths | Where-Object {
+            $candidate = [string]$_
+            @($aiRoots | Where-Object { Test-PathAtOrBelow -Path $candidate -Root $_.Path }).Count -eq 0
+        })
+    }
     return @($paths)
 }
 
@@ -96,6 +108,7 @@ if ($space) {
 }
 
 $allCats = @(
+    @{ Code = "AF"; Script = "scan-ai-footprints.ps1" }
     @{ Code = "A"; Script = "scan-system-hidden.ps1" }
     @{ Code = "B"; Script = "scan-temp-files.ps1" }
     @{ Code = "C"; Script = "scan-dev-caches.ps1" }
@@ -320,6 +333,7 @@ $reportId = "CS-${timestamp}-$($healthScore)"
 $cb = [char]96 + [char]96 + [char]96
 
 $catNamesCN = @{
+    "AF"="AI软件总足迹";
     "A"="系统隐藏"; "B"="临时缓存"; "C"="开发缓存"; "D"="浏览器";
     "E"="应用数据"; "F"="大文件"; "G"="特殊占用"; "H"="安全软件";
     "I"="多版本"; "J"="重复运行时"; "K"="输入法"; "L"="即时通讯";

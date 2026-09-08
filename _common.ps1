@@ -48,6 +48,21 @@ function Get-UninstallRegistryEntries {
     return @($Global:CDriveUninstallRegistryEntries)
 }
 
+function ConvertTo-NonEmptyStringList {
+    <# Normalize optional JSON arrays. In PowerShell @($null).Count is 1. #>
+    param([object[]]$Values)
+    return @($Values | ForEach-Object { [string]$_ } | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
+function Test-RegexListMatch {
+    param([string]$Value, [object[]]$Patterns)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    foreach ($pattern in @(ConvertTo-NonEmptyStringList -Values $Patterns)) {
+        if ($Value -match $pattern) { return $true }
+    }
+    return $false
+}
+
 function Resolve-UninstallInstallFolder {
     param(
         $Entry,
@@ -437,6 +452,74 @@ function Expand-EnvPath {
         -replace '%PROGRAMFILES%', $env:ProgramFiles `
         -replace '%PROGRAMDATA%', $env:ProgramData `
         -replace '%DOCUMENTS%', ([Environment]::GetFolderPath("MyDocuments"))
+}
+
+function Get-AIFootprintConfig {
+    param([string]$ConfigPath = "")
+    if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-SkillRoot) "extensions\ai-footprints.json" }
+    if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf -ErrorAction SilentlyContinue)) { return $null }
+    try { return Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json }
+    catch { throw "AI footprint config could not be parsed: $($_.Exception.Message)" }
+}
+
+function Get-EffectiveEnvironmentValue {
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return "" }
+    foreach ($scope in @("Process", "User", "Machine")) {
+        $value = [Environment]::GetEnvironmentVariable($Name, $scope)
+        if (-not [string]::IsNullOrWhiteSpace($value)) { return [Environment]::ExpandEnvironmentVariables($value.Trim().Trim('"')) }
+    }
+    return ""
+}
+
+function Resolve-AIFootprintConfiguredRoots {
+    <# Resolve only declared roots. Registry and AppX install roots are added by AF at scan time. #>
+    param([object]$Config = $null)
+    if (-not $Config) { $Config = Get-AIFootprintConfig }
+    if (-not $Config) { return @() }
+
+    $rows = [System.Collections.ArrayList]::new()
+    foreach ($app in @($Config.applications)) {
+        foreach ($root in @($app.roots)) {
+            $envValue = Get-EffectiveEnvironmentValue -Name ([string]$root.pathEnv)
+            $configuredPath = if ($envValue) { $envValue } else { Expand-EnvPath ([string]$root.path) }
+            if ([string]::IsNullOrWhiteSpace($configuredPath)) { continue }
+            $matches = if ($configuredPath -match '[*?]') {
+                @(Get-Item -Path $configuredPath -Force -ErrorAction SilentlyContinue)
+            } else {
+                @([pscustomobject]@{ FullName=$configuredPath })
+            }
+            foreach ($match in $matches) {
+                $fullPath = try { [IO.Path]::GetFullPath([string]$match.FullName).TrimEnd('\') } catch { continue }
+                [void]$rows.Add([pscustomobject]@{
+                    AppId = [string]$app.id
+                    AppName = [string]$app.name
+                    RootId = [string]$root.id
+                    Path = $fullPath
+                    Kind = [string]$root.kind
+                    Policy = [string]$root.policy
+                    Relocation = [string]$root.relocation
+                    MigrationKey = [string]$root.migrationKey
+                    InspectCommand = [string]$root.inspectCommand
+                    CleanupCommand = [string]$root.cleanupCommand
+                    PathEnvironment = [string]$root.pathEnv
+                    EnvironmentOverride = [bool]$envValue
+                    Source = "configured"
+                })
+            }
+        }
+    }
+    return @($rows)
+}
+
+function Test-PathAtOrBelow {
+    param([string]$Path, [string]$Root)
+    try {
+        $pathFull = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+        $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+        return $pathFull.Equals($rootFull, [StringComparison]::OrdinalIgnoreCase) -or
+            $pathFull.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase)
+    } catch { return $false }
 }
 
 function Load-SignatureDb {
