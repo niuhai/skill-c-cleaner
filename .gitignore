@@ -18,6 +18,18 @@ cleanup_log_*.txt
 # ---------- 👤 用户自定义配置 ----------
 # user-custom.json 可能包含用户的个人信息或特定路径
 extensions/user-custom.json
+extensions/discovery-suggestions.txt
+
+# 本机测试、性能基线和发布草稿可能包含设备容量、软件清单或使用习惯
+/CONTEST-SUBMISSION.md
+/FORUM-POST.md
+/_plan.ps1
+/tests/TEST-RESULTS-LOG.md
+/tests/IDEA-LOG.md
+/tests/migration-guide.md
+/tests/scenarios/all-scenarios.md
+/tests/scenarios/TRAE-Optimization-Test-Plan.md
+/tests/performance/benchmark-history.md
 
 # ---------- 🧠 个性化引擎运行时产物 ----------
 # 用户画像和推荐结果（每次运行会重新生成，包含用户环境信息）

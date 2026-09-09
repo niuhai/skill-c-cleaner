@@ -15,7 +15,7 @@
   </p>
   
   <p align="center">
-    <img src="https://img.shields.io/badge/version-v7.2.0-blue.svg" alt="Version"/>
+    <img src="https://img.shields.io/badge/version-v7.3.0-blue.svg" alt="Version"/>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
     <img src="https://img.shields.io/badge/powershell-5.1%2B-blue.svg" alt="PowerShell"/>
     <img src="https://img.shields.io/badge/platform-windows-lightgrey.svg" alt="Platform"/>
@@ -111,9 +111,9 @@ cd skill-c-cleaner
 .\migrators\plan-ai-footprints.ps1
 ```
 
-v7.1 的 AF 生命周期层覆盖 19 类 AI 工具：本机一遍扫描约 29.01 GB 位于 C 盘的逻辑字节，分别给出 4.47 GB 安全缓存、3.82 GB 需确认项、21.67 GB 迁移候选和按“未解释字节”计算的学习队列。逻辑字节不冒充 NTFS 实际分配空间；执行清理时以 cleanup session 的 allocated bytes 与盘符可用空间变化为准。所有正式 cleaner 统一拒绝根目录、越界路径、非 C 卷及任意祖先 junction/符号链接。
+v7.1 的 AF 生命周期层覆盖多类 AI 工具，并把安全缓存、需确认项、迁移候选和“未解释字节”学习队列分开核算。逻辑字节不冒充 NTFS 实际分配空间；执行清理时以 cleanup session 的 allocated bytes 与盘符可用空间变化为准。所有正式 cleaner 统一拒绝根目录、越界路径、非 C 卷及任意祖先 junction/符号链接。
 
-v7.2 新增 `MS` 厂商托管存储层。本机试验发现 WPS 精确 `cachedata` 实际分配 18.504 GB、ESP-IDF 精确 `dist` 实际分配 1.150 GB；两者只给出厂商 UI/CLI 管理入口，不进入直接 cleaner。F 全盘扫描现在会把同遍聚合结果回填共享缓存，`F,MX` 总耗时从 65.3 秒降至 15.2–16.1 秒，其中 MX 从 48.0 秒降至约 0.9 秒。
+v7.2 新增 `MS` 厂商托管存储层。WPS 云缓存和 ESP-IDF 下载归档只给出厂商 UI/CLI 管理入口，不进入直接 cleaner。F 全盘扫描会把同遍聚合结果回填共享缓存，避免 MX 重复遍历。
 
 ### 示例输出
 

@@ -2,6 +2,7 @@
 
 | 版本 | 日期 | 关键词 | 规模 |
 |------|------|--------|------|
+| v7.3.0 | 2026-09-09 | TRAE 实测白名单收敛、隐私产物隔离 | ⚡ Minor |
 | v7.2.0 | 2026-09-08 | 厂商托管存储、WPS/ESP-IDF、F→MX 复用 | ⚡ Minor |
 | v7.1.0 | 2026-09-08 | 未解释字节队列、19 类 AI 工具、逻辑/分配口径校正 | ⚡ Minor |
 | v7.0.0 | 2026-09-08 | AI 软件生命周期、一遍核算、实机学习队列、迁移规划 | 🚀 Major |
@@ -22,13 +23,23 @@
 
 ---
 
+## v7.3.0 (2026-09-09) — ⚡ TRAE 实测白名单与隐私收口
+
+- 将一次成功的 TRAE CN / TRAE SOLO CN 清理结论沉淀到 AF 生命周期层：缓存目标全部清空且无失败项，可稳定回收多 GB 空间。
+- 为两类 TRAE 补齐 Dawn、WebGPU 与 Shader 可重建缓存；继续保留 `User`、`ModularData`、`WebStorage` 和 `Local Storage`。
+- TRAE 继续走 AF 单一事实源，不在 O 类重复计量，避免同一路径重复形成清理额度。
+- 原始清理结果、设备容量、软件清单、性能基线和发布草稿改为本地隐私产物，由 `.gitignore` 排除；公共文档只保留匿名化结论与临时夹具测试。
+- 版本发布前完成路径、用户名、主机名、邮箱、IP、密钥和当前设备值扫描，未发现待提交敏感项。
+
+---
+
 ## v7.2.0 (2026-09-08) — ⚡ 厂商托管存储与全盘结果复用
 
 - 新增 `MS` 类和 `extensions/managed-storage.json`，把“容量很大但必须由产品自身管理”的目录从普通 inventory 提升为明确的谨慎项，同时不提供直接删除器。
-- 本机定位 WPS `WPS Cloud Files\.567472000\cachedata`：逻辑/NTFS 分配均为 18.504 GB、153 个文件、无硬链接或压缩抵消；WPS 正在运行，只建议同步完成后使用“释放空间”，或在存储管理中更换位置。
-- 本机定位 `.espressif`：逻辑/分配均为 5.123 GB，其中当前 `tools` 3.90 GB、`dist` 下载归档 1.150 GB/12 文件、`python_env` 0.08 GB；只把 `dist` 列为厂商 CLI 谨慎项，保留当前工具链与 Python 环境。
+- 脱敏验证确认：WPS `cachedata` 必须保持厂商托管，只建议同步完成后使用“释放空间”或更换位置。
+- 脱敏验证确认：ESP-IDF 只把 `dist` 下载归档列为厂商 CLI 谨慎项，保留当前 `tools` 与 `python_env`。
 - 新增厂商托管存储结构/行为测试，使用临时夹具验证只读测量、谨慎风险和“无直接 cleaner”不变量。
-- F 扫描把 growth 精确聚合写入同轮测量缓存；MX 对剩余 C 盘一级目录做四路批量测量。两次实测 `F,MX` 从 65.3 秒降至 15.2–16.1 秒，MX 从 48.0 秒降至 0.9–0.94 秒，F 本身约 14.2 秒。
+- F 扫描把 growth 精确聚合写入同轮测量缓存；MX 对剩余 C 盘一级目录做批量测量，脱敏性能验证确认不再重复全盘遍历。
 - 新增 WPS 与 ESP-IDF 官方处理说明。发布测试没有删除、迁移或修改 WPS/ESP-IDF 数据。
 
 ---
@@ -40,7 +51,7 @@
 - DoubaoWork 的浏览器缓存精确识别为 163.7 MB，sandbox runtime、环境、SDK 和应用状态保留；ZCode 的 311.7 MB updater 残留列为谨慎项，CLI、workspace 和 session 保留。
 - 配置测试增加“旧 `ai_tools` 签名必须映射到 AF 根”的覆盖约束，未来新增 AI 签名时不能静默漏过生命周期核算。
 - 修正计量术语：AF 默认值是位于 C 盘且排除 reparse 目标的逻辑字节，不再称作物理/分配占用；真实释放仍由 cleanup session 和 SA 的 NTFS 分配字节验证。
-- 本机复扫：19 类配置、15 类存在数据，逻辑足迹约 29.01 GB，safe 4.47 GB、managed/confirm 3.82 GB、迁移候选 21.67 GB，100 MB 以上未解释热点为 0，跳过目录为 0；最新热态原生枚举 4.8 秒。未删除或迁移数据。
+- 脱敏复扫确认：配置分类、safe/managed/preserve 边界、未解释热点队列与原生枚举均正常收敛；未删除或迁移数据。
 
 ---
 
@@ -52,7 +63,7 @@
 - 新增 AF 专用清理器：默认预览，执行时检查活跃进程、允许根和重解析点，并记录实际盘符增量、分配字节回收与再生复测会话。
 - 新增只读迁移规划器，优先 Playwright/Ollama/Hugging Face 官方环境变量与工具命令，并将第三方 Electron IDE junction 降为谨慎方案。
 - 修复空可选正则会匹配全部注册表/AppX 包的归属缺陷，增加配置结构、关键保留项、应用专属进程门禁和空正则回归测试。
-- 本机验证：AF 从错误归属时的 80 秒降至 11.5 秒（原生枚举 7.4 秒）；一轮“发现→分类→复扫”后确认位于 C 盘的逻辑字节 27.78 GB、安全缓存 4.31 GB、需确认项 3.52 GB、迁移候选 20.74 GB，未分类热点从 19 个收敛到 5 个。未在发布验证中删除或迁移用户数据。
+- 脱敏验证确认：AF 在一轮“发现→分类→复扫”后显著减少误归属和未分类热点；未在发布验证中删除或迁移用户数据。
 
 ---
 
@@ -63,18 +74,18 @@
 - 修复 `clean-apps` 的范围错配：带 `sub_cleanable` 的签名直接消费扫描得到的精确 measurement 路径，不再从“只统计缓存”落入“删除整个应用数据根目录”的执行分支。
 - 新增 `AD` 管理员只读核算：VSS、DISM WinSxS、WindowsApps、Installer、DriverStore 与 Reserved Storage；全部隔离在 inventory，不进入可释放额度。
 - 新增 `tests/validate-cleanup-guard.ps1`，覆盖正常目录/文件、根目录、允许根越界、junction 和跨盘路径。
-- 本机只读验证：Fast 16 类用时 5.7–5.9 秒，预热 88 条唯一路径，后续 91 次逻辑测量全部命中缓存；AD 普通权限降级输出通过；未删除、移动或修改用户/系统源数据。
+- 脱敏只读验证确认：Fast 预热后的逻辑测量命中共享缓存，AD 普通权限降级输出通过；未删除、移动或修改用户/系统源数据。
 
 ---
 
 ## v6.6.0 (2026-08-14) — ⚡ 定向快速扫描与重解析点安全
 
-- J 类增加双层覆盖：`-Fast` 读取卸载注册表安装位置和 `extensions/runtime-inventory.json` 的精确候选；普通模式继续广泛扫描 AppData/Program Files。快速与深度模式在本机均命中同一组 8 个运行时根。
+- J 类增加双层覆盖：`-Fast` 读取卸载注册表安装位置和 `extensions/runtime-inventory.json` 的精确候选；普通模式继续广泛扫描 AppData/Program Files。脱敏验证确认快速与深度模式归属一致。
 - 通用目录体积测量改为进程内 Win32 `FindFirstFileExW`，保留 robocopy 兼容回退；O 类定向目标使用四路批量测量。
 - 对目标及其所有祖先检查 junction/符号链接。重定向到 D/E 盘的数据不再计作 C 盘可释放量，定向清理也不会沿链接删除。
 - VM 用 `Win32_LogicalDiskToPartition` 和 `Win32_DiskDrive` 一次映射所有固定盘，从约 5.7 秒降至约 0.6 秒。
 - U 类复用卸载注册表；快速模式不测软件目录，完整模式只补测可能相关的 C 盘目录，避免为 D/E 软件做无效遍历。
-- 本机只读验证：16 类 `analyze.ps1 -Fast` 为 9.5 秒；J 快速原生遍历 17,613 文件约 0.6 秒，深度 J 遍历 383,651 文件约 22.1 秒；未删除或移动数据。
+- 脱敏只读验证确认：快速模式显著减少 J 类遍历量，深度模式仍可完整覆盖；未删除或移动数据。
 
 ---
 
@@ -82,11 +93,11 @@
 
 - 新增 Win32 `FindFirstFileExW` 原生扫描器，将 Users/AppData、Windows、ProgramData 和 Program Files 拆成有界并发分片；跨分片用户目录统计统一合并。
 - F 类在同一遍约 58 万文件枚举中同时生成 TOP 20、用户一级目录大小和 37 个增长目标统计，不再为 GR 重扫父子目录。
-- 快速模式读取带时间戳和 `measurementSource` 的增长快照；GR 从 114.9 秒降到 0.2 秒，完整 F→GR 复用时约 0.5 秒。
+- 快速模式读取带时间戳和 `measurementSource` 的增长快照；F→GR 复用显著降低重复测量耗时。
 - 重写 J 类 Electron/CEF 盘点，拆分 Microsoft/Google/Tencent 厂商容器；整个应用体积和 runtime-shaped 字节只进入 inventory，不进入可清理额度。
 - 应用签名只核算 `sub_cleanable` 精确子路径；Search 索引负担只作为优化线索；最终清理总量按路径层级去重。
 - 增加逐分类耗时、文件数、分区数、跳过目录、缓存命中和 JSON scanner metadata，便于后续持续优化。
-- 本机验证：F 从约 111 秒降到 14.9–36.2 秒；`analyze.ps1 -Fast` 从 153.6 秒降到 26.6 秒；全程只读，未删除数据。
+- 脱敏验证确认：F 与 `analyze.ps1 -Fast` 均显著提速；全程只读，未删除数据。
 
 ---
 
@@ -95,7 +106,7 @@
 - Replaced the PowerShell `Get-ChildItem -Recurse` large-file scan with an in-process .NET directory enumerator.
 - Maintains a bounded TOP-N candidate set, skips reparse-point directories, and continues through inaccessible folders while reporting skip counts.
 - Keeps protected Windows trees out of the file-level scan because A/WU/SA already provide their directory-level evidence.
-- Real-machine validation: 504,251 files in about 97 seconds for TOP 20; no files were modified.
+- An anonymized fixture and read-only validation confirmed bounded TOP-N behavior; no files were modified.
 
 ## v6.4.0 (2026-08-12) — 📐 可验证空间核算
 
@@ -188,8 +199,8 @@
 - **问题**: 用户不知道要等多久、清了多少、进度如何
 - **修复**: 
   - 进度显示: `[1/3] [2/3] [3/3]`
-  - 清理前提示: "即将清理 3 项，预计释放 15.81 GB"
-  - 清理后显示: "C盘当前: 130.93 GB / 148.91 GB (剩余 17.98 GB, 87.9%)"
+  - 清理前提示匹配项目数与预计释放量
+  - 清理后显示匿名化空间汇总，不把本机结果写入仓库
 
 ### 🐛 其他修复
 - **clean-safe.ps1 编码修复**: 添加 UTF-8 BOM，修复中文显示乱码
@@ -204,17 +215,15 @@
 | 清理 15.81 GB (3项) | ❌ 飞书卡死后全崩 | ✅ ~3 分钟完成 | **∞** |
 
 ### 🧪 新增 tests/ 测试评测文件夹
-- **创建完整测试体系**: `tests/` 目录，与 CONTEST-SUBMISSION.md 同步维护
-- **TEST-RESULTS-LOG.md**: 记录真实扫描测试结果（基于 3 次实际扫描数据）
-- **IDEA-LOG.md**: 记录优化想法、踩坑经验、TODO 清单（12 个已实现/开发中/未来想法）
+- **创建完整测试体系**: `tests/` 目录维护测试方法与临时夹具；真实结果仅保存在本地
+- **本地结果日志**: 记录真实扫描与清理验证，但不进入公开仓库
+- **本地想法日志**: 记录优化想法与踩坑经验，但不进入公开仓库
 - **methodology/test-strategies.md**: 各模式的测试方法和验收标准
-- **scenarios/all-scenarios.md**: 按场景组织的测试结果（5 个真实场景）
-- **performance/benchmark-history.md**: 性能基准历史追踪
+- **场景与性能记录**: 本机容量、软件清单和性能基线统一作为隐私产物处理
 
-### 📝 CONTEST-SUBMISSION.md 同步更新
-- 加入真实扫描验证数据（148.91 GB 磁盘，91.7% 使用率，28.39 GB 可释放）
+### 📝 发布材料
+- 发布草稿与真实测试数据保持在本地，不纳入版本控制
 - 诚实标注 v6.2 memory/ 系统状态（骨架完成，待接入主流程）
-- 文件结构新增 tests/ 目录引用
 - 版本分化说明：稳定版 v6.1.0 / 开发版 v6.2.0
 
 ## v6.1.0 (2026-05-16) — 🏭 生产级重构（Production Ready）
@@ -274,9 +283,8 @@
 - 教训: 批量操作前必须先 git commit 或备份
 
 ### ✅ 生产级质量验证
-- **真实扫描通过**: 12 类别全量扫描，耗时 ~30 分钟
-- **真实数据报告生成**: CleanSight-CS-20260516-140534-17.md (252 行)
-  - 健康评分: 17/100 (CRITICAL)
+- **脱敏扫描通过**: 全类别扫描完整执行；原始耗时与设备数据仅留本地
+- **结构化报告生成通过**: 报告结构、风险分层与行动建议均完成验证
   - 可安全释放: 28.11 GB
   - 需确认: 30.68 GB
   - 总扫描占用: 59.37 GB

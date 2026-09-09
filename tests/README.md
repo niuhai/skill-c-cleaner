@@ -1,7 +1,6 @@
 # CleanSight 测试与评测体系
 
-> **配套文档**: 与 [CONTEST-SUBMISSION.md](../CONTEST-SUBMISSION.md) 同步维护
-> **核心理念**: 主代码改了 → 测试文件也跟着改 → 不断记录想法和优化
+> **核心理念**: 公共仓库只保留测试方法、夹具和验收脚本；真实设备数据与结果日志留在本地。
 
 ---
 
@@ -10,38 +9,30 @@
 ```
 tests/
 ├── README.md                       ← 你在这里
-├── TEST-RESULTS-LOG.md             ← 真实测试结果日志（持续追加）
-├── IDEA-LOG.md                     ← 想法、创意、优化追踪（持续更新）
 ├── validate-managed-storage.ps1    ← 厂商托管存储结构、只读行为与无直接 cleaner 验证
 ├── validate-scan-reuse.ps1         ← F 全盘聚合向 MX 共享测量缓存的报告验证
 │
 ├── methodology/                     ← 测试方法论
 │   └── test-strategies.md          ← 各模式测试方法说明
 │
-├── scenarios/                       ← 场景测试记录
-│   └── all-scenarios.md            ← 完整场景测试结果汇总
-│
-└── performance/                     ← 性能基准测试
-    └── benchmark-history.md         ← 性能数据历史记录
+└── 本机结果日志、场景数据与性能基线  ← 由 .gitignore 排除
 ```
 
 ## 同步维护规则
 
 | 事件 | 你需要做的事 |
 |------|------------|
-| 修改了 scanner/ 下的脚本 | 更新 TEST-RESULTS-LOG.md + scenarios 对应记录 |
-| 修改了 memory/ 下的脚本 | 更新 IDEA-LOG.md（记录新的学习能力） |
-| 修改了 analyze.ps1 | 更新 benchmark-history.md（性能变化） |
-| 有了新的想法 | 记录到 IDEA-LOG.md |
-| 做了新的测试 | 追加到 TEST-RESULTS-LOG.md |
-| 更新了 CONTEST-SUBMISSION.md | 同步更新这里的对应数据 |
+| 修改了 scanner/ 下的脚本 | 更新公开验证脚本；原始结果留在本地 |
+| 修改了 memory/ 下的脚本 | 本地记录学习效果，不提交个人画像 |
+| 修改了 analyze.ps1 | 本地更新性能基线，不提交设备参数 |
+| 有了新的想法 | 写入本地想法日志 |
+| 做了新的测试 | 公开匿名化结论；原始结果仅留本地 |
 
 ## 文件说明
 
-| 文件 | 用途 | 谁维护 |
-|------|------|--------|
-| `TEST-RESULTS-LOG.md` | 按时间线记录每次真实测试的结果 | AI + 用户共同维护 |
-| `IDEA-LOG.md` | 记录优化想法、新功能点子、踩坑经验 | AI 主动提出 + 用户补充 |
-| `methodology/test-strategies.md` | 各模式的测试方法和验收标准 | AI 维护 |
-| `scenarios/all-scenarios.md` | 按场景组织的测试结果 | AI 维护 |
-| `performance/benchmark-history.md` | 性能基线数据追踪 | AI 维护 |
+| 文件 | 用途 | 版本控制 |
+|------|------|----------|
+| `validate-*.ps1` | 使用临时夹具验证结构与安全不变量 | 提交 |
+| `methodology/test-strategies.md` | 各模式的测试方法和验收标准 | 提交 |
+| 本地结果日志 | 真实清理效果、设备容量和耗时 | 忽略 |
+| 本地场景与性能基线 | 软件组合、使用习惯和性能变化 | 忽略 |

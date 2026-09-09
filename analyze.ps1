@@ -7,10 +7,11 @@
 )
 
 $SkillRoot = Split-Path -Parent $PSCommandPath
-if (-not $SkillRoot) { $SkillRoot = "C:\.trae\skills\c-drive-cleaner" }
+if (-not $SkillRoot) { $SkillRoot = $PSScriptRoot }
+if (-not $SkillRoot) { throw "Skill root could not be resolved from the script location." }
 . (Join-Path $SkillRoot "_common.ps1")
 
-$VERSION = "7.2.0"
+$VERSION = "7.3.0"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 $Global:CDriveInventory = [System.Collections.ArrayList]::new()

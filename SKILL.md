@@ -23,6 +23,8 @@ description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实
 
 使用 `.\cleaners\clean-targeted-optimization.ps1 -WhatIf` 预览，确认后追加 `-ReallyDelete`；脚本会检查相关进程并阻止越界路径。
 
+TRAE CN 与 TRAE SOLO CN 统一走 AF 生命周期层，不在 O 类重复计量。已验证有效的安全范围是 `CachedData`、Electron/GPU/Dawn/Shader 缓存、`logs` 与 `Crashpad\reports`；必须保留 `User`、`ModularData`、`WebStorage` 和 `Local Storage`。真实验证只沉淀“可回收多 GB 且无失败项”的匿名化结论，不提交设备容量、用户路径或软件使用画像。
+
 如果目标本身或任意祖先目录是 junction/符号链接，C 盘扫描不得沿链接统计或清理。应报告为 `partial`；链接目标位于 D/E 盘时，删除只会释放目标盘空间。
 
 ## 不常用软件与 C 盘零碎信息
@@ -212,10 +214,8 @@ c-drive-cleaner/
 ├── track-growth.ps1    (路径级快照、增量与日增长率)
 ├── measure-space.ps1   (NTFS 分配字节与硬链接去重核算)
 ├── track-regeneration.ps1 (清理后 5m/1h/24h 再生检查)
-├── tests/      (测试评测体系 — 与 CONTEST-SUBMISSION.md 同步维护)
-│   ├── TEST-RESULTS-LOG.md     ← 真实测试结果
-│   ├── IDEA-LOG.md             ← 想法与优化追踪
-│   └── migration-guide.md      ← 缓存迁移方案选择指南
+├── tests/      (可公开的验证脚本与测试方法)
+│   └── methodology/            ← 脱敏测试策略与验收标准
 └── memory/     (v6.2 个性化系统 — 架构设计中)
 ```
 
@@ -237,9 +237,9 @@ c-drive-cleaner/
 
 | 操作 | 修复前 | 修复后 (v6.1.2) | 提升 |
 |------|--------|-----------------|------|
-| 删除 4.81 GB 飞书目录 | ❌ 卡死 30 分钟 | ✅ ~30 秒 | **60x+** |
-| 删除 10.3 GB Trae CN | ❌ 没机会跑 | ✅ ~60 秒 | **∞** |
-| 清理 3 项共 15.8 GB | ❌ 卡死后全崩 | ✅ ~3 分钟 | **∞** |
+| 删除大量小文件缓存 | ❌ 可能长时间卡住 | ✅ 有超时与回退 | 显著改善 |
+| 前序目标失败 | ❌ 后续目标不执行 | ✅ 独立处理并继续 | 消除单点阻塞 |
+| 多项目批量清理 | ❌ 一项失败拖垮整轮 | ✅ 分项收口 | 可预测 |
 
 ### 管理员权限
 
@@ -300,7 +300,7 @@ c-drive-cleaner/
 
 ## 🔄 缓存迁移说明
 
-> 详见 [tests/migration-guide.md](tests/migration-guide.md)
+迁移前先运行对应扫描器并使用 `-WhatIf` 预览；只迁移边界清晰、可重建或有官方迁移机制的数据。真实路径、容量和应用清单仅保存在本地报告中。
 
 | 操作 | 方式 | 复杂程度 | 推荐 |
 |------|------|---------|------|
@@ -315,7 +315,7 @@ c-drive-cleaner/
 - `scan-large-files.ps1` uses 422 bounded NVMe-friendly partitions over a Win32 `FindFirstFileExW` engine. It keeps a bounded TOP-N set, merges cross-partition user totals, skips reparse targets, and reports inaccessible coverage.
 - The same F pass aggregates the configured growth paths. GR reuses those totals in a full run; `-Fast` reads the most recent source-tagged snapshot and states its age instead of rescanning parent and child trees.
 - Cleanup totals are built from exact measured paths with parent/child deduplication. Search-index burden and whole Electron/CEF application footprints are inventory only.
-- Measured on this machine: F scanned about 580,000 files in 14.9-36.2 seconds; `F,GR` completed in 16.0 seconds; `-Fast` fell from 153.6 seconds to 26.6 seconds.
+- An anonymized read-only benchmark confirmed that F reuses its traversal for GR and that `-Fast` avoids redundant work; raw device counts and timings remain local.
 
 ## v6.6.0 focused-fast and reparse safety note
 
@@ -323,7 +323,7 @@ c-drive-cleaner/
 - Logical directory measurement now uses in-process Win32 enumeration with a robocopy compatibility fallback. Targeted paths are measured in a bounded four-way batch.
 - Any reparse point in the target's ancestry stops C-drive accounting and targeted cleanup. This prevents redirected Qoder data on D from being reported as C reclaim.
 - VM maps all drive letters through bulk CIM association queries. U reuses the registry inventory and avoids non-C fallback traversal.
-- Measured on this machine: `-Fast` completed 16 categories in 9.5 seconds; focused J enumerated 17,613 files in 0.6 seconds, while broad J remained available and enumerated 383,651 files in 22.1 seconds.
+- An anonymized read-only benchmark confirmed that focused J is substantially cheaper than broad J while preserving the broad mode for deep inspection.
 
 ## v6.7.0 global planning, cleanup guard, and admin accounting note
 
@@ -331,7 +331,7 @@ c-drive-cleaner/
 - Every maintained cleaner now passes through one fail-closed deletion gate. It rejects relative paths, drive/system/profile roots, targets outside caller-declared roots, non-C volumes, and any target whose ancestry contains a junction, symlink, or mount point.
 - `clean-apps` executes the exact measured `sub_cleanable` paths; a cache-only signature must never fall through to deleting the whole application-data root.
 - `AD` adds administrator-only, read-only accounting for VSS, WinSxS, WindowsApps, Installer, DriverStore, and Reserved Storage. Protected-store values remain inventory-only.
-- Measured on this machine: `-Fast` completed 16 categories in 5.7-5.9 seconds; the planner seeded 88 unique paths and all 91 downstream logical measurements were cache hits.
+- An anonymized read-only benchmark confirmed that planner prewarming removes repeated downstream logical measurements.
 
 ## v7.0.0 AI software lifecycle and live-learning note
 
@@ -339,22 +339,22 @@ c-drive-cleaner/
 - The report exposes a non-destructive learning queue for large unclassified children. A discovery remains `review` until its semantics, safety and repeated measurements justify a config change.
 - The AF cleaner defaults to preview, blocks active applications and reparse ancestry, and writes before/after cleanup sessions. The migration planner is read-only and prefers official environment variables or vendor lifecycle commands.
 - Empty optional regex arrays are normalized explicitly so they can never match every installed package. The release test covers configuration structure, preservation invariants and this regression.
-- Measured on this machine after one discovery/classification round: 27.78 GB of C-located logical AI footprint, 4.31 GB explicit safe cache, 3.52 GB managed/confirm items, 20.74 GB migration candidates and 5 remaining review hotspots; AF completed in 11.5 seconds (7.4 seconds native enumeration).
+- An anonymized discovery/classification round confirmed that AF separates safe cache, managed/confirm items, migration candidates, and remaining review hotspots without exposing raw device totals.
 
 ## v7.1.0 unexplained-byte learning and broader AI coverage note
 
 - AF now reports only the unclassified remainder of a mixed-data child. Already classified nested cache/state paths are collapsed to a non-overlapping union before subtraction, so neither repeated parent reports nor parent/child double counting can distort the learning queue.
 - The lifecycle config adds DoubaoWork, ZCode, LobsterAI, CodeBuddy, Doubao, iChat and GitHub Copilot. Validation requires every legacy `ai_tools` signature path to overlap an AF root, preventing the lifecycle layer from silently falling behind the older signature catalog.
 - AF terminology now states its measurement basis precisely: logical file lengths physically located on C with reparse targets excluded. NTFS allocated bytes and real free-space changes remain cleanup-session/SA evidence.
-- Measured on this machine: 19 configured groups, 15 detected, 29.01 GB C-located logical footprint, 4.47 GB safe, 3.82 GB managed/confirm, 21.67 GB migration candidates, zero unexplained hotspots above 100 MB, and 0 skipped directories. The latest warm native pass took 4.8 seconds.
+- An anonymized validation pass confirmed that configured groups, safe/managed/preserve boundaries, the unexplained-hotspot queue, and native enumeration all converged without deleting or migrating source data.
 
 ## v7.2.0 vendor-managed storage and scan reuse note
 
 - `MS` separates vendor-managed storage from direct cleanup. WPS cloud cache must go through sync-aware WPS controls; ESP-IDF archive cleanup must go through its version-aware tool flow. Neither source has a direct cleaner.
-- On this machine, NTFS accounting confirmed 18.504 GB for the exact WPS `cachedata` path and 5.123 GB for `.espressif`; only the 1.150 GB `dist` archive area is surfaced for ESP-IDF review, while `tools` and `python_env` remain preserved.
-- F now seeds exact aggregate measurements into the shared cache. MX batches only remaining root directories, reducing measured `F,MX` runs from 65.3 seconds to 15.2–16.1 seconds and MX itself from 48.0 seconds to about 0.9 seconds.
+- An anonymized NTFS accounting pass confirmed that WPS `cachedata` stays vendor-managed and only ESP-IDF `dist` is surfaced for review, while `tools` and `python_env` remain preserved.
+- F now seeds exact aggregate measurements into the shared cache. MX batches only remaining root directories, avoiding a second full traversal.
 
-*CleanSight v7.2.0 — AI Disk Health Advisor*
+*CleanSight v7.3.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
 ## 虚拟内存强化规则（VM）
 
