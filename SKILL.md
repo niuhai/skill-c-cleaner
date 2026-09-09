@@ -3,6 +3,18 @@ name: "c-drive-cleaner"
 description: "AI驱动的C盘空间诊断与安全清理顾问。通过 NTFS 实际分配空间测量、父子目录去重、应用级增长与清理后再生追踪、厂商托管缓存/工具链、Windows 更新残留、不常用软件和零碎空间盘点，定位空间为何增长及清理为何无效。当用户询问C盘空间不足、清理不动、可用空间未增加、缓存重新生成、想查不常用软件/大文件/隐藏占用、迁移数据或复盘清理效果时调用此技能。"
 ---
 
+## 启动第一步：先问清报告存放位置（必须）
+
+**每次开始诊断前，先用一句话问用户报告/产物存到哪里，确认后再跑扫描。**
+
+- 提问示例：「报告和基线默认存到哪里？可以用当前值 `<当前解析值>`，也可以给我一个目录（例如 `D:\CleanSight`）。」
+- 用户给出目录 → 运行 `.\set-output-root.ps1 -Path "<目录>"`（自动建目录、校验可写、写入 `extensions\output-root.json`）
+- 用户说「用默认」→ 不写配置，直接用当前解析值
+- 用户想更换 → 再运行一次上面的命令；只想临时换一次 → `.\analyze.ps1 -OutputRoot "<目录>"`（不落配置）
+- 查看当前值 → `.\set-output-root.ps1`；清除配置 → `.\set-output-root.ps1 -Clear`
+
+未确认前不要跑 `analyze.ps1`：扫描本身只读，但报告、基线、日志会写到默认位置。
+
 ## AI 软件生命周期（AF 类）
 
 当“清理不动”或 AI 软件持续吃 C 盘时，先运行 `./analyze.ps1 -Categories AF -OutputFormat json -RecordGrowth`。AF 用一遍原生扫描核算安装目录、Electron 会话数据、runtime、模型、扩展、索引、状态和更新残留，并严格拆成四类：安全缓存、工具/人工管理项、必须保留项、待研究项。
@@ -133,22 +145,22 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 .\measure-space.ps1 -Paths "%APPDATA%\Qoder"          # 核算逻辑大小与 NTFS 分配字节
 ```
 
-### 产物位置（v7.3.1）
+### 产物位置（v7.4.0）
 
-所有生成产物（报告、基线、清理会话、日志、快照）默认写入 **`D:\deepseek\workspace\cleansight`**，不再写进技能目录，避免清理工具自己在 C 盘留痕：
+所有生成产物（报告、基线、清理会话、日志、快照）写入**用户在启动时选定的目录**，不再写进技能目录，也不硬编码任何盘符：
 
-| 产物 | 默认位置 |
+| 产物 | 相对位置（挂在用户选定的根目录下） |
 |------|----------|
-| Markdown / JSON 报告 | `D:\deepseek\workspace\cleansight\reports` |
-| 增长基线 | `...\reports\growth\latest.json` |
-| AI 足迹基线 | `...\reports\ai-footprints\latest.json` |
-| 清理会话 | `...\reports\cleanup-sessions` |
-| 迭代状态 | `...\reports\iterations` |
-| 搜索索引排除表 | `...\reports\search-index-exclusions.json` |
-| 快照与注册表备份 | `...\snapshots` |
-| 每日监控日志 | `...\snapshots\daily` |
+| Markdown / JSON 报告 | `<根目录>\reports` |
+| 增长基线 | `<根目录>\reports\growth\latest.json` |
+| AI 足迹基线 | `<根目录>\reports\ai-footprints\latest.json` |
+| 清理会话 | `<根目录>\reports\cleanup-sessions` |
+| 迭代状态 | `<根目录>\reports\iterations` |
+| 搜索索引排除表 | `<根目录>\reports\search-index-exclusions.json` |
+| 快照与注册表备份 | `<根目录>\snapshots` |
+| 每日监控日志 | `<根目录>\snapshots\daily` |
 
-覆盖优先级：`analyze.ps1 -OutputRoot "<路径>"` > `$Global:CDriveArtifactRoot` > 环境变量 `CLEANSIGHT_OUTPUT_DIR` > 内置默认值。
+解析优先级：`analyze.ps1 -OutputRoot "<路径>"` > `$Global:CDriveArtifactRoot` > 环境变量 `CLEANSIGHT_OUTPUT_DIR` > `extensions\output-root.json`（由 `set-output-root.ps1` 写入）> 技能目录（兜底，兼容 v7.3.0 行为）。
 
 ### 扫描类别速查
 
@@ -371,7 +383,7 @@ c-drive-cleaner/
 - An anonymized NTFS accounting pass confirmed that WPS `cachedata` stays vendor-managed and only ESP-IDF `dist` is surfaced for review, while `tools` and `python_env` remain preserved.
 - F now seeds exact aggregate measurements into the shared cache. MX batches only remaining root directories, avoiding a second full traversal.
 
-*CleanSight v7.3.1 — AI Disk Health Advisor*
+*CleanSight v7.4.0 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
 ## v7.3.1 report rendering, VM section, and artifact root note
 
@@ -379,6 +391,12 @@ c-drive-cleaner/
 - 虚拟内存段落修复 `${drive.Drive}` / `${primaryDrive.Drive}` 字面变量插值导致的空盘符与空容量，并新增「已配置的页面文件」表；实施步骤按 C 盘是否已有页面文件分支，不再硬编码「在 C 盘建 4GB 页面文件」这种与自身规则矛盾的建议。
 - 产物默认根目录改为 `D:\deepseek\workspace\cleansight`，由 `_common.ps1` 的 `Get-CleanSightArtifactRoot` 统一解析，覆盖报告、基线、清理会话、日志、快照与每日监控。
 - 修复编辑过程中丢失的 9 个脚本 UTF-8 BOM（PS 5.1 无 BOM 会按 ANSI 解析并破坏中文输出）。
+
+## v7.4.0 ask-first artifact location note
+
+- 产物目录不再硬编码：技能启动时由 AI 询问用户报告存放位置，并用 `set-output-root.ps1` 持久化到 `extensions\output-root.json`，后续运行直接复用。
+- 解析优先级：`-OutputRoot` > `$Global:CDriveArtifactRoot` > `CLEANSIGHT_OUTPUT_DIR` > `extensions\output-root.json` > 技能目录（兜底）。
+- `set-output-root.ps1` 会校验绝对路径、拒绝盘符根、自动建目录并做写权限探测，失败时明确报错而不是静默回退。
 
 ## 虚拟内存强化规则（VM）
 

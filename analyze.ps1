@@ -14,7 +14,7 @@ if (-not $SkillRoot) { throw "Skill root could not be resolved from the script l
 
 if ($OutputRoot) { $Global:CDriveArtifactRoot = $OutputRoot }
 
-$VERSION = "7.3.1"
+$VERSION = "7.4.0"
 $BRAND = "CleanSight"
 $Global:CDriveScanResults = [System.Collections.ArrayList]::new()
 $Global:CDriveInventory = [System.Collections.ArrayList]::new()
