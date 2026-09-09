@@ -19,6 +19,8 @@ cleanup_log_*.txt
 # user-custom.json 可能包含用户的个人信息或特定路径
 extensions/user-custom.json
 extensions/discovery-suggestions.txt
+# 用户选定的产物目录（set-output-root.ps1 写入，路径可能含用户名）
+extensions/output-root.json
 
 # 本机测试、性能基线和发布草稿可能包含设备容量、软件清单或使用习惯
 /CONTEST-SUBMISSION.md
