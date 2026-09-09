@@ -27,6 +27,36 @@ function Get-SkillRoot {
     throw "Skill root could not be resolved from the script location."
 }
 
+# --- Artifact output root ---------------------------------------------------
+# All generated artifacts (reports, growth baselines, cleanup sessions, logs)
+# default to D:\deepseek\workspace\cleansight so they never accumulate on C:.
+# Resolution priority:
+#   1. -OutputRoot parameter on analyze.ps1 (sets $Global:CDriveArtifactRoot)
+#   2. $Global:CDriveArtifactRoot set by a caller
+#   3. CLEANSIGHT_OUTPUT_DIR environment variable
+#   4. Built-in default below
+function Get-CleanSightArtifactRoot {
+    param([string]$Override = "")
+    if ($Override) { return $Override }
+    if ($Global:CDriveArtifactRoot) { return [string]$Global:CDriveArtifactRoot }
+    if ($env:CLEANSIGHT_OUTPUT_DIR) { return $env:CLEANSIGHT_OUTPUT_DIR }
+    return 'D:\deepseek\workspace\cleansight'
+}
+
+function Get-CleanSightArtifactPath {
+    param([string]$Relative = "")
+    $root = Get-CleanSightArtifactRoot
+    if (-not $Relative) { return $root }
+    return (Join-Path $root $Relative)
+}
+
+function Initialize-CleanSightArtifactDirectory {
+    param([string]$Path)
+    if (-not $Path) { return $Path }
+    if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
+    return $Path
+}
+
 function Get-UninstallRegistryEntries {
     <#
     Read the three standard uninstall registry views once per analysis run.

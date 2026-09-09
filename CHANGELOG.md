@@ -2,6 +2,7 @@
 
 | 版本 | 日期 | 关键词 | 规模 |
 |------|------|--------|------|
+| v7.3.1 | 2026-09-09 | 报告渲染修复、VM 段修复、产物默认落到 D 盘 | 🐛 Patch |
 | v7.3.0 | 2026-09-09 | TRAE 实测白名单收敛、隐私产物隔离 | ⚡ Minor |
 | v7.2.0 | 2026-09-08 | 厂商托管存储、WPS/ESP-IDF、F→MX 复用 | ⚡ Minor |
 | v7.1.0 | 2026-09-08 | 未解释字节队列、19 类 AI 工具、逻辑/分配口径校正 | ⚡ Minor |
@@ -20,6 +21,34 @@
 | v3.0.0 | 2026-04-02 | 四维深度分析 | 📊 Major |
 | v2.0.0 | 2026-04-01 | 结构化报告 | 📋 Minor |
 | v1.0.0 | 2026-04-01 | 初始版本 | 🚀 Initial |
+
+---
+
+## v7.3.1 (2026-09-09) — 🐛 报告渲染与产物位置修复
+
+**问题 1：Markdown 报告内容缺失。** `analyze.ps1` 的 `BuildReport` 只写了执行摘要、MX 与 VM 三段，`findings` / Tier 分级建议 / 类别明细从未渲染，且出现两个「二、」标题。控制台与 JSON 才是完整证据源。
+
+- 新增 `# 二、清理建议（Tier 分级）`：按 safe / cautious+dangerous / forbidden 分三档，输出项目、类别、大小、路径、建议，并给出每档合计。
+- 新增 `# 三、扫描明细（按类别）`：按类别汇总条目数、合计与其中可安全清理量。
+- 执行摘要补充健康评分、禁止删除量、扫描合计与产物目录；MX 改为 `# 四、C盘零碎空间信息（解释层）`，VM 改为 `# 五`，并新增 `# 六、下一步与产物位置`。
+- dedup 行只保留测量字段，因此按 `Category|Name` 重建 Advice 映射，保证建议列不丢。
+
+**问题 2：虚拟内存段落渲染为空并给出矛盾建议。**
+
+- `${drive.Drive}` / `${drive.FreeGB}` / `${primaryDrive.Drive}` 在 PowerShell 中是**字面变量名**（`${...}` 不做属性展开），导致「驱动器 :」和「可用空间 GB」为空。改为 `$($drive.Drive)` 形式，并把迁移目标改为表格（含介质与说明）。
+- 「实施步骤」原本硬编码「在 C 盘建 4096 MB 页面文件」并提示「保持 4GB 页面文件在 C 盘」，与技能自身规则（未确认崩溃转储需求前不动 C 盘页面文件）及实测状态（C 盘无页面文件）矛盾。现在按状态分支：
+  - C 盘无页面文件 → 只给说明，明确「不要为释放 C 盘空间而新建 C 盘页面文件」；
+  - C 盘有页面文件且有合适迁移目标 → 步骤使用真实盘符与可用空间，并提示仅在确认不需要完整崩溃转储时才缩小/移除；
+  - 无满足余量的目标盘 → 不建议迁移。
+- 新增「已配置的页面文件」表，列出每个页面文件的配置与实际占用（不可读时显式标注权限原因）。
+
+**产物位置统一到 D 盘。** 新增 `_common.ps1` 中的 `Get-CleanSightArtifactRoot` / `Get-CleanSightArtifactPath` / `Initialize-CleanSightArtifactDirectory`，默认根目录 `D:\deepseek\workspace\cleansight`，解析优先级：`analyze.ps1 -OutputRoot` 参数 > `$Global:CDriveArtifactRoot` > `CLEANSIGHT_OUTPUT_DIR` 环境变量 > 内置默认值。
+
+- 覆盖范围：报告与 JSON（`reports`）、增长基线（`reports\growth`）、AI 足迹基线（`reports\ai-footprints`）、清理会话（`reports\cleanup-sessions`）、迭代状态（`reports\iterations`）、搜索索引排除表、清理日志、未知应用发现建议、注册表备份与前后快照（`snapshots`）、每日监控日志（`snapshots\daily`）。
+- `safety\backup-registry.ps1`、`safety\snapshot-before-after.ps1`、`scheduled\daily-monitor.ps1` 原先写 `C:\cleanup_snapshots`，改为统一产物目录，避免清理工具自己在 C 盘留痕。
+- 迁移既有基线：把旧 `skills\c-drive-cleaner\reports` 复制到新产物根，保证增长对比连续。
+
+**编码回归修复。** 编辑过程曾丢失 9 个脚本的 UTF-8 BOM（`analyze.ps1`、`_common.ps1`、`clean-safe.ps1`、`clean-apps.ps1`、`scan-search-index.ps1`、`backup-registry.ps1`、`snapshot-before-after.ps1`、`daily-monitor.ps1`、`scan-discover.ps1`）。PowerShell 5.1 在无 BOM 时按 ANSI 解析，会破坏中文输出；已按编辑前状态恢复 BOM，并用 UTF-8 显式解析全量校验 53 个脚本语法通过。
 
 ---
 

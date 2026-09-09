@@ -21,7 +21,7 @@ if (-not (Test-Path (Join-Path $skillRoot "_common.ps1"))) {
 }
 . (Join-Path $skillRoot "_common.ps1")
 
-$LogFile = Join-Path (Get-SkillRoot) "cleanup_log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
+$LogFile = Join-Path (Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "reports")) "cleanup_log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
 
 if ($WhatIf) {
     Write-Host "===== 应用缓存清理 - WhatIf 预览模式 =====" -ForegroundColor Cyan

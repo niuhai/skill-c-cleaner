@@ -158,8 +158,7 @@ foreach ($candidate in $actionable) {
 }
 
 $driveAfter = New-Object IO.DriveInfo('C:\')
-$sessionDir = Join-Path $skillRoot 'reports\cleanup-sessions'
-if (-not (Test-Path -LiteralPath $sessionDir)) { New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null }
+$sessionDir = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath 'reports\cleanup-sessions')
 $session = [pscustomobject]@{
     schema=1; sessionId=$sessionId; label='AI footprint cleanup'; createdAt=$sessionStarted.ToString('o'); completedAt=(Get-Date).ToString('o')
     baseline=[pscustomobject]@{ driveFreeBytes=$driveFreeBefore; targets=@($auditRows | ForEach-Object { [pscustomobject]@{ path=$_.path; logicalStatus=$_.before.status; logicalBytes=$_.before.logicalBytes; allocatedStatus=$_.before.status; allocatedBytes=$_.before.allocatedBytes; fileCount=$_.before.fileCount } }) }

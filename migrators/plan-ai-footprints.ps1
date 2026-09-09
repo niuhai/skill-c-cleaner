@@ -9,9 +9,10 @@ param(
 )
 
 $skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+. (Join-Path $skillRoot "_common.ps1")
 
 function Get-LatestAFReport {
-    foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $skillRoot 'reports') -Filter '*.json' -File -ErrorAction SilentlyContinue |
+    foreach ($file in @(Get-ChildItem -LiteralPath (Get-CleanSightArtifactPath 'reports') -Filter '*.json' -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 30)) {
         try {
             $report = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json

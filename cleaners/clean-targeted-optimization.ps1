@@ -151,8 +151,7 @@ if ($preview) {
     $driveAfter = New-Object IO.DriveInfo("C:\")
     $driveFreeDelta = [int64]$driveAfter.AvailableFreeSpace - $driveFreeBefore
     $allocatedReclaim = [int64](($auditRows | ForEach-Object { [int64]$_.before.allocatedBytes - [int64]$_.after.allocatedBytes } | Measure-Object -Sum).Sum)
-    $sessionDir = Join-Path $skillRoot "reports\cleanup-sessions"
-    if (-not (Test-Path -LiteralPath $sessionDir)) { New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null }
+    $sessionDir = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "reports\cleanup-sessions")
     $baselineTargets = @($auditRows | ForEach-Object {
         [pscustomobject]@{ path=$_.path; logicalStatus=$_.before.status; logicalBytes=$_.before.logicalBytes; allocatedStatus=$_.before.status; allocatedBytes=$_.before.allocatedBytes; fileCount=$_.before.fileCount }
     })

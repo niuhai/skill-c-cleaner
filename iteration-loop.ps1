@@ -9,9 +9,9 @@ param(
 )
 
 $skillRoot = Split-Path -Parent $PSCommandPath
+. (Join-Path $skillRoot "_common.ps1")
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$stateDir = Join-Path $skillRoot "reports\iterations"
-if (-not (Test-Path -LiteralPath $stateDir)) { New-Item -ItemType Directory -Path $stateDir -Force | Out-Null }
+$stateDir = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "reports\iterations")
 $statePath = Join-Path $stateDir "iteration-$timestamp.json"
 
 # project-pilot: 8 bounded states. Each state produces an observable artifact.
@@ -60,7 +60,7 @@ Add-Event "dispatch" "complete" "Preview generated; deletion requires explicit -
 if ($Mode -eq "verify") {
     Add-Event "verify" "start" "Re-measure after a user-approved cleanup."
     & (Join-Path $skillRoot "analyze.ps1") -Categories "F,GR" -OutputFormat "console" 2>&1 | Out-Host
-    $latestCleanup = Get-ChildItem -LiteralPath (Join-Path $skillRoot "reports\cleanup-sessions") -Filter "cleanup-*.json" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $latestCleanup = Get-ChildItem -LiteralPath (Get-CleanSightArtifactPath "reports\cleanup-sessions") -Filter "cleanup-*.json" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latestCleanup) {
         $cleanupState = Get-Content -LiteralPath $latestCleanup.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
         & (Join-Path $skillRoot "track-regeneration.ps1") -Mode check -SessionId $cleanupState.sessionId 2>&1 | Out-Host

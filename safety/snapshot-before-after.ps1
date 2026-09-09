@@ -6,8 +6,9 @@ param(
     [string]$Mode = "before"  # before / after
 )
 
-$SnapshotDir = "C:\cleanup_snapshots"
-New-Item -ItemType Directory -Path $SnapshotDir -Force | Out-Null
+$skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+. (Join-Path $skillRoot "_common.ps1")
+$SnapshotDir = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "snapshots")
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $snapshotFile = "$SnapshotDir\$($Label)_${Mode}_$timestamp.json"
 

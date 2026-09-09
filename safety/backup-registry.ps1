@@ -1,7 +1,11 @@
 ﻿# backup-registry.ps1 - 操作前注册表备份
 # 在执行环境变量修改/配置变更前备份相关注册表项
 
-param([string]$BackupDir = "C:\cleanup_snapshots\registry_backups")
+param([string]$BackupDir = "")
+
+$skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+. (Join-Path $skillRoot "_common.ps1")
+if (-not $BackupDir) { $BackupDir = Get-CleanSightArtifactPath "snapshots\registry_backups" }
 
 New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"

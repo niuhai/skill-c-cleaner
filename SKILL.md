@@ -133,6 +133,23 @@ CleanSight = 决策层：理解你 → 分析数据 → 智能建议 → 教你�
 .\measure-space.ps1 -Paths "%APPDATA%\Qoder"          # 核算逻辑大小与 NTFS 分配字节
 ```
 
+### 产物位置（v7.3.1）
+
+所有生成产物（报告、基线、清理会话、日志、快照）默认写入 **`D:\deepseek\workspace\cleansight`**，不再写进技能目录，避免清理工具自己在 C 盘留痕：
+
+| 产物 | 默认位置 |
+|------|----------|
+| Markdown / JSON 报告 | `D:\deepseek\workspace\cleansight\reports` |
+| 增长基线 | `...\reports\growth\latest.json` |
+| AI 足迹基线 | `...\reports\ai-footprints\latest.json` |
+| 清理会话 | `...\reports\cleanup-sessions` |
+| 迭代状态 | `...\reports\iterations` |
+| 搜索索引排除表 | `...\reports\search-index-exclusions.json` |
+| 快照与注册表备份 | `...\snapshots` |
+| 每日监控日志 | `...\snapshots\daily` |
+
+覆盖优先级：`analyze.ps1 -OutputRoot "<路径>"` > `$Global:CDriveArtifactRoot` > 环境变量 `CLEANSIGHT_OUTPUT_DIR` > 内置默认值。
+
 ### 扫描类别速查
 
 | 类别 | 脚本 | 覆盖 | 适用 |
@@ -354,8 +371,15 @@ c-drive-cleaner/
 - An anonymized NTFS accounting pass confirmed that WPS `cachedata` stays vendor-managed and only ESP-IDF `dist` is surfaced for review, while `tools` and `python_env` remain preserved.
 - F now seeds exact aggregate measurements into the shared cache. MX batches only remaining root directories, avoiding a second full traversal.
 
-*CleanSight v7.3.0 — AI Disk Health Advisor*
+*CleanSight v7.3.1 — AI Disk Health Advisor*
 *理解你 · 分析数据 · 智能建议 · 赋能执行*
+## v7.3.1 report rendering, VM section, and artifact root note
+
+- `BuildReport` 现在会渲染完整的 Tier 分级建议与类别明细；此前 Markdown 报告只有「执行摘要 + MX + VM」三段，findings 从未落盘，且出现重复的「二、」标题。
+- 虚拟内存段落修复 `${drive.Drive}` / `${primaryDrive.Drive}` 字面变量插值导致的空盘符与空容量，并新增「已配置的页面文件」表；实施步骤按 C 盘是否已有页面文件分支，不再硬编码「在 C 盘建 4GB 页面文件」这种与自身规则矛盾的建议。
+- 产物默认根目录改为 `D:\deepseek\workspace\cleansight`，由 `_common.ps1` 的 `Get-CleanSightArtifactRoot` 统一解析，覆盖报告、基线、清理会话、日志、快照与每日监控。
+- 修复编辑过程中丢失的 9 个脚本 UTF-8 BOM（PS 5.1 无 BOM 会按 ANSI 解析并破坏中文输出）。
+
 ## 虚拟内存强化规则（VM）
 
 运行 `analyze.ps1 -Categories "VM"` 时，优先读取注册表 `PagingFiles` 配置，再用 `pagefile.sys` 实际文件大小辅助判断。权限不足时必须标记“无法读取”，不能把页面文件误报为不存在。

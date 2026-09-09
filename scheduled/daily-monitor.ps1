@@ -21,8 +21,7 @@ $report = @"
 使用率: ${usedPercent}%
 "@
 
-$logDir = "C:\cleanup_snapshots\daily"
-New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+$logDir = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "snapshots\daily")
 $report | Out-File "$logDir\$(Get-Date -Format 'yyyyMMdd').txt" -Append -Encoding UTF8
 
 # 用一遍原生 F 扫描同时记录重点目录快照，避免逐路径 robocopy 重扫。

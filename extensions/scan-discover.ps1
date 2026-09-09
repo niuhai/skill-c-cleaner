@@ -8,9 +8,10 @@ param(
 )
 
 $SkillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+. (Join-Path $SkillRoot "_common.ps1")
 $SignaturesFile = Join-Path $SkillRoot "extensions\app-signatures.json"
 $CustomFile = Join-Path $SkillRoot "extensions\user-custom.json"
-$SuggestionsFile = Join-Path $SkillRoot "extensions\discovery-suggestions.txt"
+$SuggestionsFile = Join-Path (Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "discovery")) "discovery-suggestions.txt"
 
 $UserProfile = $env:USERPROFILE
 $LocalAppData = $env:LOCALAPPDATA

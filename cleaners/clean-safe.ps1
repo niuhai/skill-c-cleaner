@@ -11,9 +11,8 @@ if (-not $skillRoot -or -not (Test-Path (Join-Path $skillRoot "_common.ps1"))) {
 }
 . (Join-Path $skillRoot "_common.ps1")
 
-# 日志文件放到 skill 的 reports 目录下，避免污染 C 盘根目录
-$reportsDir = Join-Path $skillRoot "reports"
-if (-not (Test-Path $reportsDir)) { New-Item -ItemType Directory -Path $reportsDir -Force | Out-Null }
+# 日志写入统一产物目录（默认 D:\deepseek\workspace\cleansight\reports），避免污染 C 盘
+$reportsDir = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "reports")
 $LogFile = Join-Path $reportsDir "cleanup_log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
 
 if (-not $ReallyDelete) {
