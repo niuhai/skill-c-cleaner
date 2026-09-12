@@ -15,7 +15,7 @@ $configPath = Join-Path $skillRoot "extensions\growth-watch.json"
 if (-not (Test-Path -LiteralPath $configPath)) { throw "Growth watch config not found: $configPath" }
 $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-if (-not $HistoryDirectory) { $HistoryDirectory = Join-Path $skillRoot "reports\growth" }
+if (-not $HistoryDirectory) { $HistoryDirectory = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "reports\growth") }
 $latestPath = Join-Path $HistoryDirectory "latest.json"
 $historyPath = Join-Path $HistoryDirectory "history.jsonl"
 

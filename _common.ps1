@@ -27,6 +27,87 @@ function Get-SkillRoot {
     throw "Skill root could not be resolved from the script location."
 }
 
+# --- Artifact output root ---------------------------------------------------
+# All generated artifacts (reports, growth baselines, cleanup sessions, logs)
+# go to a user-chosen root. The AI must ask the user for this location when the
+# skill starts and persist the answer with set-output-root.ps1; nothing is
+# hard-coded to a specific drive.
+# Resolution priority:
+#   1. -OutputRoot parameter on analyze.ps1 (sets $Global:CDriveArtifactRoot)
+#   2. $Global:CDriveArtifactRoot set by a caller
+#   3. CLEANSIGHT_OUTPUT_DIR environment variable
+#   4. extensions\output-root.json written by set-output-root.ps1
+#   5. Skill directory (v7.3.0-compatible fallback when nothing was chosen yet)
+function Get-CleanSightOutputRootConfigPath {
+    return (Join-Path (Get-SkillRoot) "extensions\output-root.json")
+}
+
+function Get-CleanSightConfiguredOutputRoot {
+    $configPath = Get-CleanSightOutputRootConfigPath
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { return "" }
+    try {
+        $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($config.artifactRoot) { return [string]$config.artifactRoot }
+    } catch { }
+    return ""
+}
+
+function Get-CleanSightArtifactRoot {
+    param([string]$Override = "")
+    if ($Override) { return $Override }
+    if ($Global:CDriveArtifactRoot) { return [string]$Global:CDriveArtifactRoot }
+    if ($env:CLEANSIGHT_OUTPUT_DIR) { return $env:CLEANSIGHT_OUTPUT_DIR }
+    $configured = Get-CleanSightConfiguredOutputRoot
+    if ($configured) { return $configured }
+    return (Get-SkillRoot)
+}
+
+function Set-CleanSightOutputRoot {
+    param(
+        [string]$Path = "",
+        [switch]$Clear
+    )
+    $configPath = Get-CleanSightOutputRootConfigPath
+    if ($Clear) {
+        if (Test-Path -LiteralPath $configPath) { Remove-Item -LiteralPath $configPath -Force }
+        return [pscustomobject]@{ Cleared = $true; ConfigPath = $configPath; ArtifactRoot = (Get-CleanSightArtifactRoot) }
+    }
+    if (-not $Path) { throw "Path is required unless -Clear is used." }
+    if (-not [IO.Path]::IsPathRooted($Path)) { throw "Artifact root must be an absolute path: $Path" }
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    if ($full -match '^[A-Za-z]:$') { throw "Refusing a drive root as the artifact root: $full" }
+    if (-not (Test-Path -LiteralPath $full)) { New-Item -ItemType Directory -Path $full -Force | Out-Null }
+    $probe = Join-Path $full (".cleansight-write-test-{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
+    try {
+        Set-Content -LiteralPath $probe -Value "ok" -Encoding ASCII -ErrorAction Stop
+    } catch {
+        throw "Artifact root is not writable: $full"
+    } finally {
+        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+    }
+    $config = [ordered]@{
+        schema = 1
+        artifactRoot = $full
+        updatedAt = (Get-Date).ToString('o')
+    }
+    ($config | ConvertTo-Json) | Out-File -LiteralPath $configPath -Encoding UTF8
+    return [pscustomobject]@{ Cleared = $false; ConfigPath = $configPath; ArtifactRoot = $full }
+}
+
+function Get-CleanSightArtifactPath {
+    param([string]$Relative = "")
+    $root = Get-CleanSightArtifactRoot
+    if (-not $Relative) { return $root }
+    return (Join-Path $root $Relative)
+}
+
+function Initialize-CleanSightArtifactDirectory {
+    param([string]$Path)
+    if (-not $Path) { return $Path }
+    if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
+    return $Path
+}
+
 function Get-UninstallRegistryEntries {
     <#
     Read the three standard uninstall registry views once per analysis run.

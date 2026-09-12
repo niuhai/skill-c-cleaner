@@ -265,7 +265,7 @@ $runningNames = @(Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $
 $appRows = [System.Collections.ArrayList]::new()
 $discoveryCandidates = [System.Collections.ArrayList]::new()
 $previous = $null
-$historyDirectory = if ($Global:CDriveAIFootprintHistoryDirectory) { [string]$Global:CDriveAIFootprintHistoryDirectory } else { Join-Path $skillRoot "reports\ai-footprints" }
+$historyDirectory = if ($Global:CDriveAIFootprintHistoryDirectory) { [string]$Global:CDriveAIFootprintHistoryDirectory } else { Get-CleanSightArtifactPath "reports\ai-footprints" }
 $latestPath = Join-Path $historyDirectory "latest.json"
 if (Test-Path -LiteralPath $latestPath -PathType Leaf -ErrorAction SilentlyContinue) {
     try { $previous = Get-Content -LiteralPath $latestPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $previous = $null }

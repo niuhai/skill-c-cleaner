@@ -26,7 +26,7 @@ function Get-FolderSizeMB {
 }
 
 $SkillRoot = Get-SkillRoot
-$SearchIndexFile = Join-Path $SkillRoot "reports\search-index-exclusions.json"
+$SearchIndexFile = Get-CleanSightArtifactPath "reports\search-index-exclusions.json"
 
 # Privacy: sanitize paths by replacing actual username with %USERPROFILE%
 function Sanitize-Path([string]$p) {
@@ -431,8 +431,7 @@ if ($indexBurdens.Count -eq 0) {
     }
     
     # Ensure reports dir exists
-    $reportsDir = Join-Path $SkillRoot "reports"
-    if (-not (Test-Path $reportsDir)) { New-Item -ItemType Directory -Path $reportsDir -Force | Out-Null }
+    $reportsDir = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "reports")
     
     $searchIndexData | ConvertTo-Json -Depth 5 | Out-File $SearchIndexFile -Encoding UTF8
     Write-Host ""

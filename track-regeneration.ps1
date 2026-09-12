@@ -13,8 +13,7 @@ param(
 
 $skillRoot = Split-Path -Parent $PSCommandPath
 . (Join-Path $skillRoot "_common.ps1")
-$sessionDir = Join-Path $skillRoot "reports\cleanup-sessions"
-if (-not (Test-Path -LiteralPath $sessionDir)) { New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null }
+$sessionDir = Initialize-CleanSightArtifactDirectory (Get-CleanSightArtifactPath "reports\cleanup-sessions")
 
 function Get-RegenMeasurement {
     param([string]$Path)
